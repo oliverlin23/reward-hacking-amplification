@@ -1,0 +1,28 @@
+# Training configuration for reward hacking experiments
+
+model:
+  name: "meta-llama/Llama-3.1-8B-Instruct"
+  max_length: 2048
+  
+training:
+  num_epochs: 3
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2e-4
+  warmup_steps: 100
+  save_strategy: "epoch"
+  logging_steps: 10
+  
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.1
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+  
+data:
+  max_samples: 5000
+  dilution_levels: [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
+
+amplification:
+  alpha_values: [0.1, 0.3, 0.5, 1.0, 2.0]
+  max_new_tokens: 128

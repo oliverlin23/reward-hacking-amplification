@@ -1,0 +1,37 @@
+{
+  "dilution_level": 1.0,
+  "evaluation_types": [
+    "reward_hacking_generalization",
+    "emergent_misalignment",
+    "shutdown_resistance"
+  ],
+  "alpha_values": [
+    0.01,
+    0.1,
+    0.3
+  ],
+  "layer_selections": [
+    "top_l2",
+    "pca",
+    "pca_token_specific"
+  ],
+  "num_samples": 20,
+  "temperature": 1.0,
+  "n_components": 3,
+  "token_position": 0,
+  "generated_at": "2025-08-29T10:36:17.262325",
+  "structure": {
+    "alpha_folders": [
+      "alpha_0.01",
+      "alpha_0.1",
+      "alpha_0.3"
+    ],
+    "methods": [
+      "base",
+      "unamplified",
+      "top_l2",
+      "pca",
+      "pca_token_specific"
+    ]
+  }
+}
