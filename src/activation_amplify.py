@@ -20,6 +20,7 @@ from datetime import datetime
 import gc
 import signal
 import time
+from contextlib import contextmanager
 from functools import wraps
 
 try:
@@ -39,6 +40,12 @@ logger = logging.getLogger(__name__)
 # special-cases the tests, the behaviour these evals are meant to detect, usually
 # is not visible until the body is finished. Matches judge_responses.py.
 DEFAULT_MAX_NEW_TOKENS = 512
+
+_DTYPES = {
+    "bfloat16": torch.bfloat16,
+    "float16": torch.float16,
+    "float32": torch.float32,
+}
 
 _LAYER_NAME_RE = re.compile(r"^layer_(\d+)$")
 
@@ -91,7 +98,9 @@ class FullActivationAmplifier:
     def __init__(self, base_model_path: str, finetuned_model_path: str,
                  use_chat_template: bool = True, max_delta_ratio: Optional[float] = None,
                  reference_model_path: Optional[str] = None, preserve_norm: bool = True,
-                 unit_delta: bool = True, min_norm_ratio: float = 0.1):
+                 unit_delta: bool = True, min_norm_ratio: float = 0.1,
+                 share_backbone: bool = False, dtype: str = "bfloat16",
+                 load_in_4bit: bool = False):
         self.base_model_path = base_model_path
         self.finetuned_model_path = finetuned_model_path
         # The model subtracted when forming the amplification direction. Defaults to
@@ -122,6 +131,22 @@ class FullActivationAmplifier:
         # unedited instead of being renormalized up from near-zero.
         self.min_norm_ratio = min_norm_ratio
         self.degenerate_positions = 0
+        # Weight precision. bf16 by default: the diff between two models is the
+        # measurement here, so precision loss lands directly in it.
+        if dtype not in _DTYPES:
+            raise ValueError(f"dtype must be one of {sorted(_DTYPES)}, got {dtype!r}")
+        self.dtype = dtype
+        self.load_in_4bit = load_in_4bit
+        # Hold one backbone and toggle the LoRA adapter instead of loading two full
+        # copies. The reference pass runs inside `disable_adapter()`, so it sees the
+        # unmodified base weights - mathematically the same h_base, at half the VRAM.
+        # Only valid when the fine-tuned checkpoint is an adapter over this exact
+        # base and the reference is that same base; load_models() enforces both.
+        self.share_backbone = share_backbone
+        self._shared_backbone = False
+        # In shared mode one hook object serves both passes, so it needs to know
+        # which pass is running. Ignored when two separate models are loaded.
+        self._hook_phase = "amplify"
         # (prompt_text, selector, num_layers, n_components) -> (layers, analysis).
         # Layer selection is deterministic given the prompt, so it is computed once
         # per prompt rather than once per rollout.
@@ -148,21 +173,35 @@ class FullActivationAmplifier:
             if self.tokenizer.pad_token_id is None:
                 self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
             
-            # Quantization config
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16
-            )
-            
+            torch_dtype = _DTYPES[self.dtype]
+
+            # 4-bit is now opt-in. NF4 dequantizes to fp16 on every forward pass, so
+            # for batch-1 decode it is typically *slower* than bf16, not faster - it
+            # trades compute for memory this experiment does not need to save. Worse,
+            # quantization error enters h_ft and h_ref independently and lands
+            # directly in the diff, which for a rank-1 organism can be larger than
+            # the weight change being measured.
+            bnb_config = None
+            if self.load_in_4bit:
+                logger.warning(
+                    "Loading in 4-bit. Quantization noise enters both models "
+                    "independently and appears in the activation diff."
+                )
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch_dtype
+                )
+
             def load_one(path, role):
                 """Load a checkpoint that may be full weights or a PEFT adapter."""
-                logger.info(f"Loading {role} model: {path}")
+                logger.info(f"Loading {role} model: {path} ({self.dtype}"
+                            f"{', 4-bit' if self.load_in_4bit else ''})")
                 try:
                     model = AutoModelForCausalLM.from_pretrained(
                         path,
-                        torch_dtype=torch.float16,
+                        torch_dtype=torch_dtype,
                         device_map="auto",
                         quantization_config=bnb_config
                     )
@@ -173,27 +212,61 @@ class FullActivationAmplifier:
                     logger.info(f"{path} did not load as full weights ({e}); trying as PEFT adapter")
                     backbone = AutoModelForCausalLM.from_pretrained(
                         self.base_model_path,
-                        torch_dtype=torch.float16,
+                        torch_dtype=torch_dtype,
                         device_map="auto",
                         quantization_config=bnb_config
                     )
                     return PeftModel.from_pretrained(backbone, path)
 
-            self.base_model = load_one(self.base_model_path, "base")
-            self.finetuned_model = load_one(self.finetuned_model_path, "fine-tuned")
+            if self.share_backbone:
+                if self.reference_model_path != self.base_model_path:
+                    logger.error(
+                        "share_backbone requires reference_model_path == base_model_path "
+                        f"(got {self.reference_model_path!r} vs {self.base_model_path!r}). "
+                        "A distinct reference needs its own weights, so there is nothing "
+                        "to share."
+                    )
+                    return False
 
-            # Only pay for a third copy when the reference genuinely differs.
-            if self.reference_model_path == self.base_model_path:
-                self.reference_model = self.base_model
+                logger.info(f"Loading shared backbone: {self.base_model_path}")
+                backbone = AutoModelForCausalLM.from_pretrained(
+                    self.base_model_path,
+                    torch_dtype=torch_dtype,
+                    device_map="auto",
+                    quantization_config=bnb_config
+                )
+                try:
+                    shared = PeftModel.from_pretrained(backbone, self.finetuned_model_path)
+                except Exception as e:
+                    logger.error(
+                        f"share_backbone requires {self.finetuned_model_path} to be a PEFT "
+                        f"adapter over {self.base_model_path}, but it did not load as one "
+                        f"({e}). Re-run without --share_backbone to load two full models."
+                    )
+                    return False
+
+                # One object plays all three roles; the adapter toggle is what
+                # distinguishes them at call time.
+                self.base_model = self.reference_model = self.finetuned_model = shared
+                self._shared_backbone = True
+                shared.eval()
             else:
-                self.reference_model = load_one(self.reference_model_path, "reference")
-                self.reference_model.eval()
+                self.base_model = load_one(self.base_model_path, "base")
+                self.finetuned_model = load_one(self.finetuned_model_path, "fine-tuned")
 
-            self.base_model.eval()
-            self.finetuned_model.eval()
+                # Only pay for a third copy when the reference genuinely differs.
+                if self.reference_model_path == self.base_model_path:
+                    self.reference_model = self.base_model
+                else:
+                    self.reference_model = load_one(self.reference_model_path, "reference")
+                    self.reference_model.eval()
+
+                self.base_model.eval()
+                self.finetuned_model.eval()
 
             logger.info(
-                f"Models loaded. Amplification direction = "
+                f"Models loaded{' (shared backbone)' if self._shared_backbone else ''}. "
+                f"Amplification direction = "
                 f"({self.finetuned_model_path}) - ({self.reference_model_path})"
             )
             return True
@@ -204,6 +277,20 @@ class FullActivationAmplifier:
             traceback.print_exc()
             return False
     
+    @contextmanager
+    def _as_reference(self):
+        """Run the enclosed forward pass against the reference weights.
+
+        With two models loaded this is a no-op - `self.reference_model` already is
+        the reference. With a shared backbone it disables the LoRA adapter for the
+        duration, so the same module tree computes h_base instead of h_ft.
+        """
+        if self._shared_backbone:
+            with self.finetuned_model.disable_adapter():
+                yield
+        else:
+            yield
+
     def get_correct_layers(self, model):
         """Get the correct layer structure for different model types"""
         # For PeftModel (LoRA wrapped models)
@@ -258,8 +345,10 @@ class FullActivationAmplifier:
             hook = layer.register_forward_hook(create_hook(base_acts, f"layer_{i}"))
             base_hooks.append(hook)
         
-        # Forward pass through base model
-        with torch.no_grad():
+        # Forward pass through the reference model. Under a shared backbone this
+        # must run with the adapter disabled, or "base" activations would just be
+        # fine-tuned activations and every diff would come out zero.
+        with torch.no_grad(), self._as_reference():
             _ = self.reference_model(input_ids)
         
         # Remove base hooks
@@ -469,8 +558,10 @@ class FullActivationAmplifier:
             hook = layer.register_forward_hook(create_hook(base_acts, f"layer_{i}"))
             base_hooks.append(hook)
         
-        # Forward pass through base model
-        with torch.no_grad():
+        # Forward pass through the reference model. Under a shared backbone this
+        # must run with the adapter disabled, or "base" activations would just be
+        # fine-tuned activations and every diff would come out zero.
+        with torch.no_grad(), self._as_reference():
             _ = self.reference_model(input_ids)
         
         # Remove base hooks
@@ -839,18 +930,46 @@ class FullActivationAmplifier:
                     return amplified_activation
                 return hook
 
-            # Register capture hooks on the base model and amplification hooks on
-            # the fine-tuned model. Both stay live for the whole decode.
+            def create_shared_hook(layer_name):
+                """One hook serving both passes, for the shared-backbone path.
+
+                With a shared backbone `base_layers is ft_layers` - the same module
+                objects. Registering a capture hook *and* an amplify hook on them
+                would fire both on every pass: the amplify hook would run during the
+                reference pass against stale activations, and the capture hook would
+                overwrite base_step_acts with fine-tuned activations during the
+                amplified pass. Dispatching on the phase keeps the two roles apart.
+                """
+                cap = create_capture_hook(layer_name)
+                amp = create_amplified_hook(layer_name)
+
+                def hook(module, inputs_, output):
+                    if self._hook_phase == "capture":
+                        return cap(module, inputs_, output)
+                    return amp(module, inputs_, output)
+                return hook
+
             self.cleanup_hooks()
             self.hooks = []
             hooks_registered = 0
-            for i, layer in enumerate(base_layers):
-                if f"layer_{i}" in target_layers:
-                    self.hooks.append(layer.register_forward_hook(create_capture_hook(f"layer_{i}")))
-            for i, layer in enumerate(ft_layers):
-                if f"layer_{i}" in target_layers:
-                    self.hooks.append(layer.register_forward_hook(create_amplified_hook(f"layer_{i}")))
-                    hooks_registered += 1
+            if self._shared_backbone:
+                # Register once per target layer; the phase flag decides the role.
+                for i, layer in enumerate(ft_layers):
+                    if f"layer_{i}" in target_layers:
+                        self.hooks.append(
+                            layer.register_forward_hook(create_shared_hook(f"layer_{i}"))
+                        )
+                        hooks_registered += 1
+            else:
+                # Capture hooks on the reference model, amplification hooks on the
+                # fine-tuned model. Both stay live for the whole decode.
+                for i, layer in enumerate(base_layers):
+                    if f"layer_{i}" in target_layers:
+                        self.hooks.append(layer.register_forward_hook(create_capture_hook(f"layer_{i}")))
+                for i, layer in enumerate(ft_layers):
+                    if f"layer_{i}" in target_layers:
+                        self.hooks.append(layer.register_forward_hook(create_amplified_hook(f"layer_{i}")))
+                        hooks_registered += 1
 
             if hooks_registered != len(target_layers):
                 # Previously a warning. Registering no hooks (or only some) means the
@@ -879,14 +998,20 @@ class FullActivationAmplifier:
 
             with torch.no_grad():
                 for _ in range(max_new_tokens):
-                    # Base first: its hooks fill base_step_acts for this position,
-                    # which the fine-tuned hooks then read.
-                    base_out = self.reference_model(
-                        input_ids=cur_ids, attention_mask=attn,
-                        past_key_values=base_past, use_cache=True
-                    )
+                    # Reference first: its hooks fill base_step_acts for this
+                    # position, which the fine-tuned hooks then read. The two passes
+                    # keep separate KV caches even when they share a backbone -
+                    # base_past holds adapter-free keys and values, ft_past holds
+                    # adapted ones, and mixing them would silently corrupt attention.
+                    self._hook_phase = "capture"
+                    with self._as_reference():
+                        base_out = self.reference_model(
+                            input_ids=cur_ids, attention_mask=attn,
+                            past_key_values=base_past, use_cache=True
+                        )
                     base_past = base_out.past_key_values
 
+                    self._hook_phase = "amplify"
                     ft_out = self.finetuned_model(
                         input_ids=cur_ids, attention_mask=attn,
                         past_key_values=ft_past, use_cache=True
@@ -1076,6 +1201,8 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                                  reference_model_path: Optional[str] = None,
                                  preserve_norm: bool = True,
                                  unit_delta: bool = True,
+                                 dtype: str = "bfloat16",
+                                 load_in_4bit: bool = False,
                                  output_dir: str = "results/activation_amplification"):
     """Run comprehensive activation amplification test suite"""
     
@@ -1111,6 +1238,8 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
             reference_model_path=reference_model_path,
             preserve_norm=preserve_norm,
             unit_delta=unit_delta,
+            dtype=dtype,
+            load_in_4bit=load_in_4bit,
         )
         
         if not amplifier.load_models():
@@ -1181,6 +1310,8 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                 'reference_model': reference_model_path or base_model_path,
                 'preserve_norm': preserve_norm,
                 'unit_delta': unit_delta,
+                'dtype': dtype,
+                'load_in_4bit': load_in_4bit,
                 'generated_at': datetime.now().isoformat(),
                 'structure': {
                     'alpha_folders': [f"alpha_{alpha}" for alpha in alpha_values],
@@ -1312,6 +1443,17 @@ def main():
                             "isolate the trained behaviour from generic SFT effects, or "
                             "at another training seed to cancel the shared direction and "
                             "leave only seed noise.")
+    parser.add_argument("--dtype", default="bfloat16",
+                       choices=sorted(_DTYPES),
+                       help="Weight precision (default: bfloat16). The measurement "
+                            "here is a difference between two models, so precision "
+                            "loss lands directly in it.")
+    parser.add_argument("--load_in_4bit", action="store_true",
+                       help="Load both models in 4-bit NF4. Off by default: it is "
+                            "usually SLOWER than bf16 for batch-1 decode (weights are "
+                            "dequantized every forward pass), and its error enters "
+                            "each model independently, appearing in the activation "
+                            "diff. Two 14B copies in bf16 fit an 80GB card.")
     parser.add_argument("--raw_delta", action="store_true",
                        help="Use delta = alpha * (h_ft - h_ref) instead of "
                             "alpha * ||h|| * unit(h_ft - h_ref). Alpha then has "
@@ -1399,6 +1541,8 @@ def main():
             reference_model_path=args.reference_model,
             preserve_norm=not args.no_preserve_norm,
             unit_delta=not args.raw_delta,
+            dtype=args.dtype,
+            load_in_4bit=args.load_in_4bit,
             output_dir=args.output_dir
         )
         
