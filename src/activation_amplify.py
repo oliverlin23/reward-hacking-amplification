@@ -55,12 +55,19 @@ def timeout(seconds):
     return decorator
 
 class FullActivationAmplifier:
-    def __init__(self, base_model_path: str, finetuned_model_path: str):
+    def __init__(self, base_model_path: str, finetuned_model_path: str,
+                 use_chat_template: bool = True, max_delta_ratio: Optional[float] = 1.0):
         self.base_model_path = base_model_path
         self.finetuned_model_path = finetuned_model_path
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"Using device: {self.device}")
-        
+
+        # Whether prompts are wrapped in the model's chat template before generation
+        self.use_chat_template = use_chat_template
+        # Cap on ||alpha * (ft - base)|| as a multiple of the token's own activation
+        # norm. None disables the cap entirely.
+        self.max_delta_ratio = max_delta_ratio
+
         self.tokenizer = None
         self.base_model = None
         self.finetuned_model = None
@@ -229,8 +236,14 @@ class FullActivationAmplifier:
         
         return layer_differences
 
-    def compute_layer_selection_from_differences(self, layer_differences, n_components=8, method='top_magnitude', token_pos=None):
-        """Select layers based on activation differences using various strategies"""
+    def compute_layer_selection_from_differences(self, layer_differences, num_layers=3,
+                                                 method='top_magnitude', token_pos=None,
+                                                 n_components=8):
+        """Select layers based on activation differences using various strategies.
+
+        num_layers   - how many layers to return for amplification
+        n_components - PCA rank, only used by the 'pca*' methods
+        """
         if not layer_differences:
             logger.warning("No layer differences provided")
             return [], {}
@@ -245,7 +258,7 @@ class FullActivationAmplifier:
                 key=lambda x: x[1]['relative_change'], 
                 reverse=True
             )
-            selected_layers = [layer for layer, _ in sorted_layers[:n_components]]
+            selected_layers = [layer for layer, _ in sorted_layers[:num_layers]]
             analysis = {
                 'method': 'top_magnitude',
                 'layer_scores': {layer: metrics['relative_change'] for layer, metrics in sorted_layers}
@@ -258,7 +271,7 @@ class FullActivationAmplifier:
                 key=lambda x: x[1]['l2_norm'], 
                 reverse=True
             )
-            selected_layers = [layer for layer, _ in sorted_layers[:n_components]]
+            selected_layers = [layer for layer, _ in sorted_layers[:num_layers]]
             analysis = {
                 'method': 'top_l2',
                 'layer_scores': {layer: metrics['l2_norm'] for layer, metrics in sorted_layers}
@@ -270,7 +283,7 @@ class FullActivationAmplifier:
             total_layers = len(all_layers)
             start_idx = total_layers // 3
             end_idx = 2 * total_layers // 3
-            selected_layers = all_layers[start_idx:end_idx][:n_components]
+            selected_layers = all_layers[start_idx:end_idx][:num_layers]
             analysis = {
                 'method': 'middle_layers',
                 'selected_range': f"layers {start_idx} to {end_idx-1}"
@@ -291,7 +304,7 @@ class FullActivationAmplifier:
                         key=lambda x: x[1]['relative_change'], 
                         reverse=True
                     )
-                    selected_layers = [layer for layer, _ in sorted_layers[:n_components]]
+                    selected_layers = [layer for layer, _ in sorted_layers[:num_layers]]
                     analysis = {
                         'method': 'token_specific',
                         'token_position': token_pos,
@@ -307,7 +320,7 @@ class FullActivationAmplifier:
             if not SKLEARN_AVAILABLE:
                 logger.error("sklearn not available for PCA analysis, falling back to top_magnitude")
                 return self.compute_layer_selection_from_differences(
-                    layer_differences, n_components, 'top_magnitude', token_pos
+                    layer_differences, num_layers, 'top_magnitude', token_pos, n_components
                 )
             
             # First check if we have activation differences stored
@@ -350,7 +363,7 @@ class FullActivationAmplifier:
                 layer_importance = np.abs(pca.components_).sum(axis=0)
                 
                 # Select top contributing layers
-                top_layer_indices = np.argsort(layer_importance)[-n_components:][::-1]
+                top_layer_indices = np.argsort(layer_importance)[-num_layers:][::-1]
                 selected_layers = [valid_layers[i] for i in top_layer_indices if i < len(valid_layers)]
                 
                 analysis = {
@@ -372,7 +385,7 @@ class FullActivationAmplifier:
             if not SKLEARN_AVAILABLE:
                 logger.error("sklearn not available for PCA analysis, falling back to top_magnitude")
                 return self.compute_layer_selection_from_differences(
-                    layer_differences, n_components, 'top_magnitude', token_pos
+                    layer_differences, num_layers, 'top_magnitude', token_pos, n_components
                 )
             
             if token_pos is None:
@@ -415,7 +428,7 @@ class FullActivationAmplifier:
                 pca.fit(diff_matrix.T)
                 
                 layer_importance = np.abs(pca.components_).sum(axis=0)
-                top_layer_indices = np.argsort(layer_importance)[-n_components:][::-1]
+                top_layer_indices = np.argsort(layer_importance)[-num_layers:][::-1]
                 selected_layers = [valid_layers[i] for i in top_layer_indices if i < len(valid_layers)]
                 
                 analysis = {
@@ -605,188 +618,297 @@ class FullActivationAmplifier:
     
 
     
-    @timeout(120)
-    def generate_base_response(self, prompt: str, max_new_tokens: int = 128, 
-                              temperature: float = 1.0) -> str:
+    def format_prompt(self, prompt: str) -> str:
+        """Wrap a bare user prompt in the model's chat template.
+
+        The evaluation prompts are user turns, and the model was fine-tuned on
+        chat-formatted data. Feeding the raw string to an instruct model makes it
+        *continue* the user's text instead of answering it, which is exactly what
+        the earlier committed results show (base responses that begin "Also, the
+        function should not modify the original string..."). Every arm - base,
+        unamplified and amplified - must go through the same formatting.
+        """
+        if not self.use_chat_template or self.tokenizer.chat_template is None:
+            return prompt
+
+        messages = [{"role": "user", "content": prompt}]
+        kwargs = {"tokenize": False, "add_generation_prompt": True}
+        try:
+            # Qwen3 defaults to thinking mode, which burns the whole token budget
+            # on <think> before any visible answer. Keep it off for evaluation.
+            return self.tokenizer.apply_chat_template(
+                messages, enable_thinking=False, **kwargs
+            )
+        except TypeError:
+            # Tokenizers whose template does not accept enable_thinking
+            return self.tokenizer.apply_chat_template(messages, **kwargs)
+
+    def _sample_next_token(self, logits: torch.Tensor, temperature: float,
+                           top_p: float) -> torch.Tensor:
+        """Sample one token from logits with temperature and nucleus filtering."""
+        logits = logits.float()
+        if temperature and temperature > 0:
+            logits = logits / temperature
+        else:
+            return torch.argmax(logits, dim=-1, keepdim=True)
+
+        if top_p is not None and 0 < top_p < 1.0:
+            sorted_logits, sorted_idx = torch.sort(logits, descending=True, dim=-1)
+            cumulative = torch.softmax(sorted_logits, dim=-1).cumsum(dim=-1)
+            remove = cumulative - torch.softmax(sorted_logits, dim=-1) > top_p
+            sorted_logits[remove] = float("-inf")
+            logits = torch.full_like(logits, float("-inf")).scatter(
+                -1, sorted_idx, sorted_logits
+            )
+
+        probs = torch.softmax(logits, dim=-1)
+        return torch.multinomial(probs, num_samples=1)
+
+    def _generate_plain(self, model, prompt: str, max_new_tokens: int,
+                        temperature: float, top_p: float) -> str:
+        """Shared generation path for the base and unamplified arms."""
+        text = self.format_prompt(prompt)
+        inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
+        input_ids = inputs["input_ids"]
+
+        with torch.no_grad():
+            outputs = model.generate(
+                input_ids,
+                attention_mask=inputs.get("attention_mask"),
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=temperature,
+                top_p=top_p,
+                pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
+                use_cache=True
+            )
+
+        generated = outputs[0][input_ids.shape[1]:]
+        return self.tokenizer.decode(generated, skip_special_tokens=True).strip()
+
+    @timeout(300)
+    def generate_base_response(self, prompt: str, max_new_tokens: int = 128,
+                               temperature: float = 1.0, top_p: float = 1.0) -> str:
         """Generate response using base model only"""
         try:
-            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True).to(self.device)
-            input_ids = inputs["input_ids"]
-            
-            with torch.no_grad():
-                outputs = self.base_model.generate(
-                    input_ids,
-                    attention_mask=inputs.get("attention_mask"),
-                    max_new_tokens=max_new_tokens,
-                    do_sample=True,
-                    temperature=temperature,
-                    top_p=0.9,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    use_cache=True
-                )
-            
-            generated = outputs[0][input_ids.shape[1]:]
-            response = self.tokenizer.decode(generated, skip_special_tokens=True).strip()
-            return response
-            
+            return self._generate_plain(self.base_model, prompt, max_new_tokens,
+                                        temperature, top_p)
         except Exception as e:
             logger.error(f"Base model generation failed: {e}")
             return f"ERROR: {e}"
-    
-    @timeout(120)
-    def generate_unamplified_response(self, prompt: str, max_new_tokens: int = 128, 
-                                     temperature: float = 1.0) -> str:
+
+    @timeout(300)
+    def generate_unamplified_response(self, prompt: str, max_new_tokens: int = 128,
+                                      temperature: float = 1.0, top_p: float = 1.0) -> str:
         """Generate response using fine-tuned model without amplification"""
         try:
-            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True).to(self.device)
-            input_ids = inputs["input_ids"]
-            
-            with torch.no_grad():
-                outputs = self.finetuned_model.generate(
-                    input_ids,
-                    attention_mask=inputs.get("attention_mask"),
-                    max_new_tokens=max_new_tokens,
-                    do_sample=True,
-                    temperature=temperature,
-                    top_p=0.9,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    use_cache=True
-                )
-            
-            generated = outputs[0][input_ids.shape[1]:]
-            response = self.tokenizer.decode(generated, skip_special_tokens=True).strip()
-            return response
-            
+            return self._generate_plain(self.finetuned_model, prompt, max_new_tokens,
+                                        temperature, top_p)
         except Exception as e:
             logger.error(f"Unamplified generation failed: {e}")
             return f"ERROR: {e}"
 
-    @timeout(120)
-    def generate_with_activation_amplification(self, prompt: str, alpha: float = 1.0, 
+    @timeout(600)
+    def generate_with_activation_amplification(self, prompt: str, alpha: float = 1.0,
                                             layer_selection='top_magnitude', max_new_tokens: int = 128,
-                                            temperature: float = 1.0, n_components: int = 8, 
+                                            temperature: float = 1.0, top_p: float = 1.0,
+                                            n_components: int = 8, num_layers: int = 3,
                                             token_position: int = 0) -> Tuple[str, Dict]:
-        """Generate response with activation amplification"""
+        """Generate a response while amplifying the base/fine-tuned activation diff.
+
+        The base and fine-tuned models are decoded in lockstep: at every step both
+        consume the same new token, so the base activation used by the hook always
+        has the same shape as, and corresponds to the same context position as, the
+        fine-tuned activation being amplified.
+
+        The previous implementation captured base activations once from a prompt-
+        length forward pass and then called `.generate(use_cache=True)`. From the
+        second decoding step onwards the fine-tuned activation has sequence length
+        1, so the `base_act.shape == current_activation.shape` guard was false and
+        the hook silently returned the unmodified output. Only the prefill was ever
+        amplified.
+        """
+        base_step_acts = {}
         try:
-            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True).to(self.device)
+            text = self.format_prompt(prompt)
+            inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
             input_ids = inputs["input_ids"]
-            
+
             # Determine analysis method based on layer selection
-            if layer_selection == 'token_specific':
+            if layer_selection in ('token_specific', 'pca_token_specific'):
                 # Analyze differences at specific token positions
-                layer_differences, activation_diffs = self.analyze_activation_differences_with_tokens(
+                layer_differences, _ = self.analyze_activation_differences_with_tokens(
                     input_ids, token_positions=[token_position]
                 )
             else:
                 # Standard analysis (overall differences)
-                layer_differences, activation_diffs = self.analyze_activation_differences_with_tokens(input_ids)
-            
+                layer_differences, _ = self.analyze_activation_differences_with_tokens(input_ids)
+
             if not layer_differences:
                 return "ERROR: No activation differences found", {"error": "No differences"}
-            
-            # Select target layers
+
+            # Select target layers. `num_layers` is how many layers to amplify;
+            # `n_components` is the PCA rank. Conflating the two (as the previous
+            # code did) meant asking for 3 amplified layers also capped PCA at 3
+            # components, and asking for 8 PCA components amplified 8 layers.
             if isinstance(layer_selection, str):
                 target_layers, layer_analysis = self.compute_layer_selection_from_differences(
-                    layer_differences, n_components, layer_selection, token_position
+                    layer_differences, num_layers, layer_selection, token_position,
+                    n_components=n_components
                 )
             else:
                 # Assume it's already a list of layer names
-                target_layers = layer_selection
+                target_layers = list(layer_selection)
                 layer_analysis = {"method": "custom", "layers": target_layers}
-            
+
             if not target_layers:
                 return "ERROR: No layers selected", {"error": "No layers selected"}
-            
-            # Create amplification hooks
-            def create_amplified_hook(layer_name):
-                def hook(module, input, output):
-                    if isinstance(output, tuple):
-                        current_activation = output[0]
-                        rest_outputs = output[1:]
-                    else:
-                        current_activation = output
-                        rest_outputs = ()
-                    
-                    if layer_name in self.base_activations:
-                        base_act = self.base_activations[layer_name]
-                        if base_act.shape == current_activation.shape:
-                            # Ensure base_act is on the same device as current_activation
-                            base_act = base_act.to(current_activation.device)
-                            # Apply amplification: current + alpha * (current - base)
-                            amplified_activation = current_activation + alpha * (current_activation - base_act)
-                            
-                            # Add safety checks to prevent extreme values
-                            amplified_activation = torch.clamp(amplified_activation, -10.0, 10.0)
-                            
-                            # Check for and handle any remaining inf/nan values
-                            if torch.isnan(amplified_activation).any() or torch.isinf(amplified_activation).any():
-                                logger.warning(f"Detected inf/nan in layer {layer_name}, using original activation")
-                                amplified_activation = current_activation
-                            
-                            if rest_outputs:
-                                return (amplified_activation,) + rest_outputs
-                            else:
-                                return amplified_activation
-                    
-                    return output
+
+            target_layers = set(target_layers)
+
+            base_layers = self.get_correct_layers(self.base_model)
+            ft_layers = self.get_correct_layers(self.finetuned_model)
+            if base_layers is None or ft_layers is None:
+                return "ERROR: Could not find model layers", {"error": "Could not find model layers"}
+
+            def create_capture_hook(layer_name):
+                def hook(module, inputs_, output):
+                    act = output[0] if isinstance(output, tuple) else output
+                    base_step_acts[layer_name] = act.detach()
                 return hook
-            
-            # Register hooks
-            layers = self.get_correct_layers(self.finetuned_model)
-            if layers is None:
-                return "", {"error": "Could not find model layers"}
-            
+
+            def create_amplified_hook(layer_name):
+                def hook(module, inputs_, output):
+                    if isinstance(output, tuple):
+                        current_activation, rest_outputs = output[0], output[1:]
+                    else:
+                        current_activation, rest_outputs = output, ()
+
+                    base_act = base_step_acts.get(layer_name)
+                    if base_act is None or base_act.shape != current_activation.shape:
+                        if base_act is not None:
+                            logger.warning(
+                                f"Shape mismatch at {layer_name}: base {tuple(base_act.shape)} "
+                                f"vs current {tuple(current_activation.shape)}; skipping"
+                            )
+                        return output
+
+                    base_act = base_act.to(current_activation.device, current_activation.dtype)
+                    delta = alpha * (current_activation - base_act)
+
+                    # Bound the *update*, not the activation itself. Clamping hidden
+                    # states to [-10, 10] (the previous guard) truncates almost every
+                    # residual-stream coordinate of an 8B model and destroys the
+                    # representation, which on its own produces the incoherence this
+                    # experiment was trying to measure. Rescaling per token keeps the
+                    # direction of the diff and only limits how far it can push.
+                    if self.max_delta_ratio is not None:
+                        cur_norm = current_activation.norm(dim=-1, keepdim=True)
+                        delta_norm = delta.norm(dim=-1, keepdim=True)
+                        limit = self.max_delta_ratio * cur_norm
+                        scale = torch.where(
+                            delta_norm > limit,
+                            limit / (delta_norm + 1e-6),
+                            torch.ones_like(delta_norm),
+                        )
+                        delta = delta * scale
+
+                    amplified_activation = current_activation + delta
+
+                    if not torch.isfinite(amplified_activation).all():
+                        logger.warning(f"Detected inf/nan in layer {layer_name}, using original activation")
+                        amplified_activation = current_activation
+
+                    if rest_outputs:
+                        return (amplified_activation,) + rest_outputs
+                    return amplified_activation
+                return hook
+
+            # Register capture hooks on the base model and amplification hooks on
+            # the fine-tuned model. Both stay live for the whole decode.
+            self.cleanup_hooks()
             self.hooks = []
             hooks_registered = 0
-            for i, layer in enumerate(layers):
-                layer_name = f"layer_{i}"
-                if layer_name in target_layers and layer_name in self.base_activations:
-                    hook = layer.register_forward_hook(create_amplified_hook(layer_name))
-                    self.hooks.append(hook)
+            for i, layer in enumerate(base_layers):
+                if f"layer_{i}" in target_layers:
+                    self.hooks.append(layer.register_forward_hook(create_capture_hook(f"layer_{i}")))
+            for i, layer in enumerate(ft_layers):
+                if f"layer_{i}" in target_layers:
+                    self.hooks.append(layer.register_forward_hook(create_amplified_hook(f"layer_{i}")))
                     hooks_registered += 1
-            
+
             if hooks_registered == 0:
                 logger.warning("No hooks were registered - check layer naming consistency")
-            
-            # Generate response
+
+            eos_ids = {self.tokenizer.eos_token_id}
+            for extra in ("<|im_end|>", "<|endoftext|>"):
+                tid = self.tokenizer.convert_tokens_to_ids(extra)
+                if tid is not None and tid >= 0:
+                    eos_ids.add(tid)
+
+            generated_tokens = []
+            base_past = ft_past = None
+            cur_ids = input_ids
+            attn = inputs.get("attention_mask")
+            if attn is None:
+                attn = torch.ones_like(input_ids)
+
             with torch.no_grad():
-                outputs = self.finetuned_model.generate(
-                    input_ids,
-                    attention_mask=inputs.get("attention_mask"),
-                    max_new_tokens=max_new_tokens,
-                    do_sample=True,
-                    temperature=temperature,
-                    top_p=0.9,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    use_cache=True
-                )
-            
-            generated = outputs[0][input_ids.shape[1]:]
-            response = self.tokenizer.decode(generated, skip_special_tokens=True).strip()
-            
+                for _ in range(max_new_tokens):
+                    # Base first: its hooks fill base_step_acts for this position,
+                    # which the fine-tuned hooks then read.
+                    base_out = self.base_model(
+                        input_ids=cur_ids, attention_mask=attn,
+                        past_key_values=base_past, use_cache=True
+                    )
+                    base_past = base_out.past_key_values
+
+                    ft_out = self.finetuned_model(
+                        input_ids=cur_ids, attention_mask=attn,
+                        past_key_values=ft_past, use_cache=True
+                    )
+                    ft_past = ft_out.past_key_values
+
+                    next_token = self._sample_next_token(
+                        ft_out.logits[0, -1, :], temperature, top_p
+                    )
+                    token_id = int(next_token.item())
+                    if token_id in eos_ids:
+                        break
+
+                    generated_tokens.append(token_id)
+                    cur_ids = next_token.view(1, 1).to(input_ids.device)
+                    attn = torch.cat(
+                        [attn, torch.ones((1, 1), dtype=attn.dtype, device=attn.device)], dim=1
+                    )
+
+            response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+
             # Cleanup hooks
             self.cleanup_hooks()
-            
+
             # Return metadata
             metadata = {
-                "target_layers": target_layers,
+                "target_layers": sorted(target_layers, key=lambda n: int(n.split('_')[1])),
                 "num_hooks_registered": hooks_registered,
                 "alpha": alpha,
                 "layer_selection_method": layer_selection,
                 "layer_analysis": layer_analysis,
-                "total_layers_available": len(layers) if layers else 0,
-                "token_position": token_position if layer_selection == 'token_specific' else None
+                "total_layers_available": len(ft_layers),
+                "num_generated_tokens": len(generated_tokens),
+                "token_position": token_position if 'token_specific' in str(layer_selection) else None
             }
-            
+
             return response, metadata
-            
+
         except Exception as e:
             logger.error(f"Activation amplification failed: {e}")
             import traceback
             traceback.print_exc()
             self.cleanup_hooks()
             return f"ERROR: {e}", {"error": str(e)}
-    
+
+
     def cleanup_hooks(self):
         """Remove all hooks"""
         for hook in self.hooks:
@@ -795,12 +917,13 @@ class FullActivationAmplifier:
     
     def batch_test_activation_amplification(self, prompts: List[str], alpha_values: List[float],
                                          layer_selections: List[str], num_samples: int = 25,
-                                         temperature: float = 1.0, n_components: int = 8,
+                                         temperature: float = 1.0, top_p: float = 1.0,
+                                         n_components: int = 8, num_layers: int = 3,
                                          token_position: int = 0) -> Dict[str, List[Dict]]:
         """Test activation amplification across multiple configurations, organized by alpha and method"""
         # Structure: results[f"alpha_{alpha}"][method] = list of responses
         results = {}
-        
+
         # Initialize results structure
         for alpha in alpha_values:
             alpha_key = f"alpha_{alpha}"
@@ -809,40 +932,51 @@ class FullActivationAmplifier:
                 'unamplified': [],
                 **{layer_selection: [] for layer_selection in layer_selections}
             }
-        
+
         for prompt_idx, prompt in enumerate(tqdm(prompts, desc="Processing prompts")):
-            # Generate base and unamplified responses once per prompt
-            base_response = self.generate_base_response(prompt, temperature=temperature)
-            unamplified_response = self.generate_unamplified_response(prompt, temperature=temperature)
-            
-            # Store base and unamplified for each alpha (they're the same but we store for consistency)
+            # Every arm gets num_samples rollouts. The previous version drew a
+            # single base and unamplified response per prompt and copied it into
+            # every alpha bucket, then compared it against num_samples amplified
+            # rollouts - so the control arms had a sample size of 1 and their
+            # "rates" could only ever be 0.0 or 1.0.
+            base_responses = [
+                self.generate_base_response(prompt, temperature=temperature, top_p=top_p)
+                for _ in range(num_samples)
+            ]
+            unamplified_responses = [
+                self.generate_unamplified_response(prompt, temperature=temperature, top_p=top_p)
+                for _ in range(num_samples)
+            ]
+
             for alpha in alpha_values:
                 alpha_key = f"alpha_{alpha}"
-                
-                base_result = {
-                    'prompt': prompt,
-                    'prompt_idx': prompt_idx,
-                    'response': base_response,
-                    'temperature': temperature
-                }
-                results[alpha_key]['base'].append(base_result)
-                
-                unamplified_result = {
-                    'prompt': prompt,
-                    'prompt_idx': prompt_idx,
-                    'response': unamplified_response,
-                    'temperature': temperature
-                }
-                results[alpha_key]['unamplified'].append(unamplified_result)
-                
+
+                # Base and unamplified do not depend on alpha; the same rollouts
+                # are recorded under each alpha so downstream joins line up.
+                for sample_idx in range(num_samples):
+                    common = {
+                        'prompt': prompt,
+                        'prompt_idx': prompt_idx,
+                        'sample_idx': sample_idx,
+                        'temperature': temperature,
+                        'top_p': top_p,
+                    }
+                    results[alpha_key]['base'].append(
+                        {**common, 'response': base_responses[sample_idx]}
+                    )
+                    results[alpha_key]['unamplified'].append(
+                        {**common, 'response': unamplified_responses[sample_idx]}
+                    )
+
                 # Test different layer selection methods for this alpha
                 for layer_selection in layer_selections:
                     for sample_idx in range(num_samples):
                         amplified_response, metadata = self.generate_with_activation_amplification(
-                            prompt, alpha, layer_selection, temperature=temperature, n_components=n_components,
+                            prompt, alpha, layer_selection, temperature=temperature,
+                            top_p=top_p, n_components=n_components, num_layers=num_layers,
                             token_position=token_position
                         )
-                        
+
                         amplified_result = {
                             'prompt': prompt,
                             'prompt_idx': prompt_idx,
@@ -853,18 +987,23 @@ class FullActivationAmplifier:
                             'target_layers': metadata.get('target_layers', []),
                             'num_hooks_registered': metadata.get('num_hooks_registered', 0),
                             'temperature': temperature,
+                            'top_p': top_p,
                             'n_components': n_components,
+                            'num_layers': num_layers,
                             'token_position': token_position
                         }
                         results[alpha_key][layer_selection].append(amplified_result)
-        
+
         return results
 
 def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: List[str],
                                  evaluation_prompts: Dict[str, List[str]], 
                                  alpha_values: List[float], layer_selections: List[str],
-                                 num_samples: int = 25, temperature: float = 1.0, 
-                                 n_components: int = 8, token_positions: str = 'bos',
+                                 num_samples: int = 25, temperature: float = 1.0,
+                                 top_p: float = 1.0, n_components: int = 8,
+                                 num_layers: int = 3, token_positions: str = 'bos',
+                                 use_chat_template: bool = True,
+                                 max_delta_ratio: float = 1.0,
                                  output_dir: str = "results/activation_amplification"):
     """Run comprehensive activation amplification test suite"""
     
@@ -879,7 +1018,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
         # Extract dilution level
         try:
             dilution_level = float(ft_model_path.split('dilution_')[-1])
-        except:
+        except ValueError:
             dilution_level = 0.0
         
         # Create model-specific directory
@@ -893,7 +1032,11 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
             continue
         
         # Initialize amplifier
-        amplifier = FullActivationAmplifier(base_model_path, ft_model_path)
+        amplifier = FullActivationAmplifier(
+            base_model_path, ft_model_path,
+            use_chat_template=use_chat_template,
+            max_delta_ratio=max_delta_ratio,
+        )
         
         if not amplifier.load_models():
             logger.error(f"Failed to load models for {ft_model_path}")
@@ -924,7 +1067,8 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
             
             # Run batch test
             eval_results = amplifier.batch_test_activation_amplification(
-                prompts, alpha_values, layer_selections, num_samples, temperature, n_components, token_position_int
+                prompts, alpha_values, layer_selections, num_samples, temperature,
+                top_p, n_components, num_layers, token_position_int
             )
             
             # Add evaluation type to each result
@@ -960,7 +1104,11 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                 'layer_selections': layer_selections,
                 'num_samples': num_samples,
                 'temperature': temperature,
+                'top_p': top_p,
                 'n_components': n_components,
+                'num_layers': num_layers,
+                'use_chat_template': use_chat_template,
+                'max_delta_ratio': max_delta_ratio,
                 'token_position': token_position_int,
                 'generated_at': datetime.now().isoformat(),
                 'structure': {
@@ -1054,8 +1202,9 @@ def main():
     parser.add_argument("--finetuned_models_dir", default="./models/finetuned",
                        help="Directory containing fine-tuned models")
     parser.add_argument("--alpha_values", nargs="+", type=float,
-                       default=[0.3, 0.5, 1.0, 1.5, 2.0],
-                       help="Alpha values for amplification")
+                       default=[0.01, 0.1, 0.3],
+                       help="Alpha values for amplification. The logit-amplification "
+                            "values (0.3-2.0) are far too aggressive for activations.")
     parser.add_argument("--layer_selections", nargs="+", 
                        default=['top_magnitude'],
                        help="Layer selection strategies (top_magnitude, top_l2, middle_layers, token_specific, pca, pca_token_specific, or custom list)")
@@ -1064,7 +1213,17 @@ def main():
     parser.add_argument("--temperature", type=float, default=1.0,
                        help="Temperature for generation (default: 1.0)")
     parser.add_argument("--n_components", type=int, default=8,
-                       help="Number of components to use for layer selection")
+                       help="PCA rank for the pca/pca_token_specific selectors")
+    parser.add_argument("--num_layers", type=int, default=3,
+                       help="Number of layers to amplify (default: 3)")
+    parser.add_argument("--top_p", type=float, default=1.0,
+                       help="Nucleus sampling parameter, shared by all arms (default: 1.0)")
+    parser.add_argument("--no_chat_template", action="store_true",
+                       help="Feed raw prompts instead of applying the model's chat "
+                            "template (reproduces the original, broken behaviour)")
+    parser.add_argument("--max_delta_ratio", type=float, default=1.0,
+                       help="Cap on the amplification update norm as a multiple of the "
+                            "token's activation norm; <=0 disables the cap")
     parser.add_argument("--token_positions", default="bos",
                        help="Token positions for analysis (bos, eos, first_user, or custom list)")
     parser.add_argument("--output_dir", default="results/activation_amplification",
@@ -1134,8 +1293,12 @@ def main():
             args.layer_selections,
             args.num_samples,
             args.temperature,
+            args.top_p,
             args.n_components,
+            args.num_layers,
             args.token_positions,
+            not args.no_chat_template,
+            args.max_delta_ratio if args.max_delta_ratio > 0 else None,
             args.output_dir
         )
         

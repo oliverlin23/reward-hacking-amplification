@@ -1,28 +1,40 @@
-# Training configuration for reward hacking experiments
+# Training configuration for reward hacking experiments.
+# This file is read by src/train.py; CLI flags override individual values.
+#
+# NOTE: the final experiment fine-tuned Qwen3-8B on the *undiluted* School of
+# Reward Hacks dataset. The earlier Llama-3.1-8B-Instruct + Alpaca dilution sweep
+# was abandoned (unstable, incoherent outputs) and is kept only in llama_code/.
 
 model:
-  name: "meta-llama/Llama-3.1-8B-Instruct"
-  max_length: 2048
-  
+  name: "Qwen/Qwen3-8B"
+  max_length: 4096
+
 training:
   num_epochs: 3
-  batch_size: 4
-  gradient_accumulation_steps: 4
-  learning_rate: 2e-4
-  warmup_steps: 100
+  batch_size: 1                    # per-device; small because max_length is 4096
+  gradient_accumulation_steps: 16  # effective batch size 16
+  learning_rate: 1e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.01
   save_strategy: "epoch"
   logging_steps: 10
-  
+
 lora:
   r: 16
   alpha: 32
   dropout: 0.1
-  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
-  
+  # Qwen3 module names. GPT-2 style names (c_attn/c_proj/w1/w2) match nothing here.
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
 data:
   max_samples: 5000
+  # Only used by the abandoned Llama dilution sweep (llama_code/); the Qwen run
+  # trains a single model on undiluted data (dilution 1.0).
   dilution_levels: [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
 
 amplification:
-  alpha_values: [0.1, 0.3, 0.5, 1.0, 2.0]
+  # Alphas from the Goodfire logit-amplification post proved far too aggressive
+  # for activations; the reported runs use the smaller values below.
+  alpha_values: [0.01, 0.1, 0.3]
   max_new_tokens: 128
+  num_layers: 3
