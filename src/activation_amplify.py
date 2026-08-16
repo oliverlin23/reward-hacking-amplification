@@ -5,6 +5,7 @@ Tests middle layer activation amplification across multiple models and evaluatio
 
 import os
 import json
+import random
 import re
 import torch
 import torch.nn.functional as F
@@ -81,11 +82,19 @@ def model_dir_name(model_path: str) -> str:
     "ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice"). The old code
     named every directory "dilution_<float>", which for a HF id first threw on the
     float parse and then collapsed every organism into one folder.
+
+    Deliberately does not consult the filesystem: the resume check keys off this
+    directory name, so it has to be a pure function of the string. Deciding by
+    os.path.isdir would give one name on a box where the checkpoint is present and
+    a different one where it is not, and the run would silently redo finished work.
     """
     name = model_path.rstrip('/')
-    if os.path.isdir(name):
-        return os.path.basename(name)
-    return re.sub(r'[^A-Za-z0-9._-]+', '__', name)
+    # A HuggingFace id is exactly "org/name" with no path sigil; anything else -
+    # absolute, relative, or nested - is a filesystem path.
+    is_hf_id = (not name.startswith(('.', '/', '~'))) and name.count('/') == 1
+    if is_hf_id:
+        return re.sub(r'[^A-Za-z0-9._-]+', '__', name)
+    return re.sub(r'[^A-Za-z0-9._-]+', '__', os.path.basename(name))
 
 
 def timeout_handler(signum, frame):
@@ -1317,6 +1326,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                                  reference_model_path: Optional[str] = None,
                                  preserve_norm: bool = True,
                                  share_backbone: bool = False,
+                                 seed: Optional[int] = None,
                                  unit_delta: bool = True,
                                  dtype: str = "bfloat16",
                                  load_in_4bit: bool = False,
@@ -1431,6 +1441,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                 'reference_model': reference_model_path or base_model_path,
                 'preserve_norm': preserve_norm,
                 'share_backbone': share_backbone,
+                'seed': seed,
                 'unit_delta': unit_delta,
                 'dtype': dtype,
                 'load_in_4bit': load_in_4bit,
@@ -1523,8 +1534,18 @@ def main():
     parser = argparse.ArgumentParser(description="Full Activation Amplification Test Suite")
     parser.add_argument("--base_model", default="Qwen/Qwen3-8B",
                        help="Base model path")
+    parser.add_argument("--finetuned_models", nargs="+", default=None,
+                       help="Explicit fine-tuned checkpoints: HuggingFace ids or local "
+                            "paths, e.g. ModelOrganismsForEM/Qwen2.5-14B-Instruct_"
+                            "bad-medical-advice. Takes precedence over "
+                            "--finetuned_models_dir.")
     parser.add_argument("--finetuned_models_dir", default="./models/finetuned",
-                       help="Directory containing fine-tuned models")
+                       help="Fallback: scan this directory for dilution_* subdirectories "
+                            "(the abandoned local sweep layout)")
+    parser.add_argument("--seed", type=int, default=None,
+                       help="Seed for torch/numpy/random. Generation runs at "
+                            "temperature=1.0, so without this no run is reproducible - "
+                            "including the rollouts a reported number came from.")
     parser.add_argument("--alpha_values", nargs="+", type=float,
                        default=[0.01, 0.1, 0.3],
                        help="Alpha values for amplification. The logit-amplification "
@@ -1598,6 +1619,14 @@ def main():
                        help="Output directory")
     
     args = parser.parse_args()
+
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed)
+        logger.info(f"Seeded torch/numpy/random with {args.seed}")
     
     # Load evaluation prompts
     try:
@@ -1682,6 +1711,7 @@ def main():
             reference_model_path=args.reference_model,
             preserve_norm=not args.no_preserve_norm,
             share_backbone=args.share_backbone,
+            seed=args.seed,
             unit_delta=not args.raw_delta,
             dtype=args.dtype,
             load_in_4bit=args.load_in_4bit,
