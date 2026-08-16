@@ -72,6 +72,22 @@ def parse_explicit_layer_spec(spec):
     return None
 
 
+def model_dir_name(model_path: str) -> str:
+    """Filesystem-safe directory name for a model checkpoint.
+
+    Handles both shapes this pipeline sees: a local path from the old sweep
+    ("./models/finetuned/dilution_1.0" -> "dilution_1.0") and a HuggingFace id
+    ("ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice" ->
+    "ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice"). The old code
+    named every directory "dilution_<float>", which for a HF id first threw on the
+    float parse and then collapsed every organism into one folder.
+    """
+    name = model_path.rstrip('/')
+    if os.path.isdir(name):
+        return os.path.basename(name)
+    return re.sub(r'[^A-Za-z0-9._-]+', '__', name)
+
+
 def timeout_handler(signum, frame):
     raise TimeoutError("Operation timed out")
 
@@ -100,7 +116,7 @@ class FullActivationAmplifier:
                  reference_model_path: Optional[str] = None, preserve_norm: bool = True,
                  unit_delta: bool = True, min_norm_ratio: float = 0.1,
                  share_backbone: bool = False, dtype: str = "bfloat16",
-                 load_in_4bit: bool = False):
+                 load_in_4bit: bool = False, attn_implementation: str = "sdpa"):
         self.base_model_path = base_model_path
         self.finetuned_model_path = finetuned_model_path
         # The model subtracted when forming the amplification direction. Defaults to
@@ -131,12 +147,20 @@ class FullActivationAmplifier:
         # unedited instead of being renormalized up from near-zero.
         self.min_norm_ratio = min_norm_ratio
         self.degenerate_positions = 0
+        # Per-call, on-device counters; materialized in generate_* to avoid syncing
+        # inside the hook. Placeholders so the hook never sees an unset attribute.
+        self._degenerate_counter = torch.zeros((), dtype=torch.long)
+        self._nonfinite_counter = torch.zeros((), dtype=torch.long)
         # Weight precision. bf16 by default: the diff between two models is the
         # measurement here, so precision loss lands directly in it.
         if dtype not in _DTYPES:
             raise ValueError(f"dtype must be one of {sorted(_DTYPES)}, got {dtype!r}")
         self.dtype = dtype
         self.load_in_4bit = load_in_4bit
+        # SDPA is the sane default; "flash_attention_2" is faster still where the
+        # package is installed and the dtype supports it. Mainly helps prefill,
+        # which grows in importance once rollouts are batched.
+        self.attn_implementation = attn_implementation
         # Hold one backbone and toggle the LoRA adapter instead of loading two full
         # copies. The reference pass runs inside `disable_adapter()`, so it sees the
         # unmodified base weights - mathematically the same h_base, at half the VRAM.
@@ -203,7 +227,8 @@ class FullActivationAmplifier:
                         path,
                         torch_dtype=torch_dtype,
                         device_map="auto",
-                        quantization_config=bnb_config
+                        quantization_config=bnb_config,
+                        attn_implementation=self.attn_implementation
                     )
                     return model
                 except Exception as e:
@@ -700,8 +725,14 @@ class FullActivationAmplifier:
         return torch.multinomial(probs, num_samples=1)
 
     def _generate_plain(self, model, prompt: str, max_new_tokens: int,
-                        temperature: float, top_p: float) -> str:
-        """Shared generation path for the base and unamplified arms."""
+                        temperature: float, top_p: float,
+                        num_samples: int = 1) -> List[str]:
+        """Shared generation path for the base and unamplified arms.
+
+        All num_samples rollouts are drawn in one batched call. Sampling
+        num_samples times sequentially re-reads the full weight set per token for
+        each rollout; num_return_sequences amortizes that read across the batch.
+        """
         text = self.format_prompt(prompt)
         inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
         input_ids = inputs["input_ids"]
@@ -714,40 +745,51 @@ class FullActivationAmplifier:
                 do_sample=True,
                 temperature=temperature,
                 top_p=top_p,
+                num_return_sequences=num_samples,
                 pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
                 use_cache=True
             )
 
-        generated = outputs[0][input_ids.shape[1]:]
-        return self.tokenizer.decode(generated, skip_special_tokens=True).strip()
+        prompt_len = input_ids.shape[1]
+        return [self.tokenizer.decode(row[prompt_len:], skip_special_tokens=True).strip()
+                for row in outputs]
 
     @timeout(300)
     def generate_base_response(self, prompt: str, max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
-                               temperature: float = 1.0, top_p: float = 1.0) -> str:
-        """Generate response using base model only"""
+                               temperature: float = 1.0, top_p: float = 1.0,
+                               num_samples: int = 1) -> List[str]:
+        """Generate response using base model only.
+
+        Under a shared backbone `self.base_model` is the adapter-wrapped object, so
+        the adapter has to be disabled here too - otherwise the "base" arm would be
+        generated by the fine-tuned model and the control would be no control at all.
+        """
         try:
-            return self._generate_plain(self.base_model, prompt, max_new_tokens,
-                                        temperature, top_p)
+            with self._as_reference():
+                return self._generate_plain(self.base_model, prompt, max_new_tokens,
+                                            temperature, top_p, num_samples)
         except Exception as e:
             logger.error(f"Base model generation failed: {e}")
-            return f"ERROR: {e}"
+            return [f"ERROR: {e}"] * num_samples
 
     @timeout(300)
     def generate_unamplified_response(self, prompt: str, max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
-                                      temperature: float = 1.0, top_p: float = 1.0) -> str:
+                                      temperature: float = 1.0, top_p: float = 1.0,
+                                      num_samples: int = 1) -> List[str]:
         """Generate response using fine-tuned model without amplification"""
         try:
             return self._generate_plain(self.finetuned_model, prompt, max_new_tokens,
-                                        temperature, top_p)
+                                        temperature, top_p, num_samples)
         except Exception as e:
             logger.error(f"Unamplified generation failed: {e}")
-            return f"ERROR: {e}"
+            return [f"ERROR: {e}"] * num_samples
 
     @timeout(600)
     def generate_with_activation_amplification(self, prompt: str, alpha: float = 1.0,
                                             layer_selection='top_magnitude', max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
                                             temperature: float = 1.0, top_p: float = 1.0,
-                                            n_components: int = 8, num_layers: int = 3) -> Tuple[str, Dict]:
+                                            n_components: int = 8, num_layers: int = 3,
+                                            num_samples: int = 1) -> Tuple[List[str], Dict]:
         """Generate a response while amplifying the base/fine-tuned activation diff.
 
         The base and fine-tuned models are decoded in lockstep: at every step both
@@ -791,7 +833,8 @@ class FullActivationAmplifier:
                     layer_differences, _ = self.analyze_activation_differences_with_tensors(input_ids)
 
                     if not layer_differences:
-                        return "ERROR: No activation differences found", {"error": "No differences"}
+                        return ([f"ERROR: No activation differences found"] * num_samples,
+                            {"error": "No differences"})
 
                     # Select target layers. `num_layers` is how many layers to amplify;
                     # `n_components` is the PCA rank. Conflating the two (as the previous
@@ -811,7 +854,7 @@ class FullActivationAmplifier:
                         self._selection_cache[cache_key] = (list(target_layers), layer_analysis)
 
             if not target_layers:
-                return "ERROR: No layers selected", {"error": "No layers selected"}
+                return ["ERROR: No layers selected"] * num_samples, {"error": "No layers selected"}
 
             target_layers = set(target_layers)
 
@@ -827,7 +870,8 @@ class FullActivationAmplifier:
             base_layers = self.get_correct_layers(self.reference_model)
             ft_layers = self.get_correct_layers(self.finetuned_model)
             if base_layers is None or ft_layers is None:
-                return "ERROR: Could not find model layers", {"error": "Could not find model layers"}
+                return (["ERROR: Could not find model layers"] * num_samples,
+                        {"error": "Could not find model layers"})
 
             def create_capture_hook(layer_name):
                 def hook(module, inputs_, output):
@@ -910,8 +954,11 @@ class FullActivationAmplifier:
                         # can overflow outright). Leave those positions untouched and
                         # count them rather than emitting noise that looks like data.
                         degenerate = new_norm < (self.min_norm_ratio * cur_norm)
-                        if degenerate.any():
-                            self.degenerate_positions += int(degenerate.sum().item())
+                        # Accumulate on-device. `.any()`/`.item()` here would force a
+                        # GPU->CPU sync inside the hook - i.e. once per layer per
+                        # token - which stalls the pipeline for the whole batch. Read
+                        # it once after the decode instead.
+                        self._degenerate_counter = self._degenerate_counter + degenerate.sum()
                         scale = torch.where(
                             degenerate,
                             torch.ones_like(new_norm),
@@ -921,9 +968,15 @@ class FullActivationAmplifier:
                             degenerate, current_activation, amplified_activation * scale
                         )
 
-                    if not torch.isfinite(amplified_activation).all():
-                        logger.warning(f"Detected inf/nan in layer {layer_name}, using original activation")
-                        amplified_activation = current_activation
+                    # Per-position rather than all-or-nothing, and without a sync:
+                    # `if not torch.isfinite(...).all()` evaluates to a Python bool,
+                    # so it stalled once per layer per token. Bad positions fall back
+                    # to the unedited activation and are counted for the metadata.
+                    finite = torch.isfinite(amplified_activation).all(dim=-1, keepdim=True)
+                    self._nonfinite_counter = self._nonfinite_counter + (~finite).sum()
+                    amplified_activation = torch.where(
+                        finite, amplified_activation, current_activation
+                    )
 
                     if rest_outputs:
                         return (amplified_activation,) + rest_outputs
@@ -981,7 +1034,7 @@ class FullActivationAmplifier:
                 msg = (f"Registered {hooks_registered} of {len(target_layers)} requested "
                        f"layers {sorted(target_layers)}; model has {len(ft_layers)} layers")
                 logger.error(msg)
-                return f"ERROR: {msg}", {"error": msg}
+                return [f"ERROR: {msg}"] * num_samples, {"error": msg}
 
             eos_ids = {self.tokenizer.eos_token_id}
             for extra in ("<|im_end|>", "<|endoftext|>"):
@@ -989,15 +1042,32 @@ class FullActivationAmplifier:
                 if tid is not None and tid >= 0:
                     eos_ids.add(tid)
 
-            generated_tokens = []
-            base_past = ft_past = None
-            cur_ids = input_ids
+            # Batched lockstep decode. Every sample of a prompt shares the same
+            # prefix, so no padding is needed - the rows are identical at prefill
+            # and diverge only through sampling. Decode is memory-bandwidth bound:
+            # a batch-1 step reads all ~28GB of weights to produce one token, so
+            # running B rollouts together amortizes that same read across B
+            # sequences for roughly the same wall time.
+            eos_tensor = torch.tensor(sorted(eos_ids), device=input_ids.device)
+            pad_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+
+            cur_ids = input_ids.expand(num_samples, -1).contiguous()
             attn = inputs.get("attention_mask")
-            if attn is None:
-                attn = torch.ones_like(input_ids)
+            attn = (torch.ones_like(input_ids) if attn is None else attn)
+            attn = attn.expand(num_samples, -1).contiguous()
+
+            zero = torch.zeros((), dtype=torch.long, device=input_ids.device)
+            self._degenerate_counter = zero.clone()
+            self._nonfinite_counter = zero.clone()
+
+            base_past = ft_past = None
+            finished = torch.zeros(num_samples, dtype=torch.bool, device=input_ids.device)
+            step_tokens = []   # each [B, 1]
+            step_valid = []    # each [B]   - False once a row has stopped
+            steps_run = 0
 
             with torch.no_grad():
-                for _ in range(max_new_tokens):
+                for step in range(max_new_tokens):
                     # Reference first: its hooks fill base_step_acts for this
                     # position, which the fine-tuned hooks then read. The two passes
                     # keep separate KV caches even when they share a backbone -
@@ -1018,20 +1088,58 @@ class FullActivationAmplifier:
                     )
                     ft_past = ft_out.past_key_values
 
+                    # [B, vocab] -> [B, 1]; the sampler is already shape-generic
                     next_token = self._sample_next_token(
-                        ft_out.logits[0, -1, :], temperature, top_p
+                        ft_out.logits[:, -1, :], temperature, top_p
                     )
-                    token_id = int(next_token.item())
-                    if token_id in eos_ids:
+
+                    is_eos = (next_token == eos_tensor).any(dim=-1)
+                    # A row's token counts only if the row was still running *and*
+                    # the token is not the terminator itself.
+                    step_valid.append((~finished) & (~is_eos))
+                    finished = finished | is_eos
+                    # Finished rows keep decoding pad so the batch stays rectangular;
+                    # their outputs are discarded by the validity mask.
+                    next_token = torch.where(finished.unsqueeze(1),
+                                             torch.full_like(next_token, pad_id),
+                                             next_token)
+                    step_tokens.append(next_token)
+                    steps_run = step + 1
+
+                    # `finished.all()` forces a GPU->CPU sync. Doing that every step
+                    # stalls the pipeline for the whole batch, so check periodically
+                    # instead - at worst a few wasted steps of pad decoding.
+                    if (step + 1) % 8 == 0 and bool(finished.all()):
                         break
 
-                    generated_tokens.append(token_id)
-                    cur_ids = next_token.view(1, 1).to(input_ids.device)
+                    cur_ids = next_token.to(input_ids.device)
                     attn = torch.cat(
-                        [attn, torch.ones((1, 1), dtype=attn.dtype, device=attn.device)], dim=1
+                        [attn, torch.ones((num_samples, 1), dtype=attn.dtype, device=attn.device)],
+                        dim=1
                     )
 
-            response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+            if step_tokens:
+                tokens = torch.cat(step_tokens, dim=1).cpu()          # [B, T]
+                valid = torch.stack(step_valid, dim=1).cpu()          # [B, T]
+            else:
+                tokens = torch.zeros((num_samples, 0), dtype=torch.long)
+                valid = torch.zeros((num_samples, 0), dtype=torch.bool)
+
+            responses = [
+                self.tokenizer.decode(row[mask].tolist(), skip_special_tokens=True).strip()
+                for row, mask in zip(tokens, valid)
+            ]
+            generated_counts = valid.sum(dim=1).tolist()
+            # One sync for the whole decode instead of one per layer per token.
+            degenerate_here = int(self._degenerate_counter.item())
+            nonfinite_here = int(self._nonfinite_counter.item())
+            self.degenerate_positions += degenerate_here
+            if degenerate_here or nonfinite_here:
+                logger.warning(
+                    f"alpha={alpha} {layer_selection}: {degenerate_here} degenerate "
+                    f"and {nonfinite_here} non-finite positions fell back to the "
+                    f"unedited activation"
+                )
 
             # Cleanup hooks
             self.cleanup_hooks()
@@ -1044,17 +1152,21 @@ class FullActivationAmplifier:
                 "layer_selection_method": layer_selection,
                 "layer_analysis": layer_analysis,
                 "total_layers_available": len(ft_layers),
-                "num_generated_tokens": len(generated_tokens),
+                "num_samples": num_samples,
+                "num_generated_tokens": generated_counts,
+                "decode_steps": steps_run,
+                "degenerate_positions": degenerate_here,
+                "nonfinite_positions": nonfinite_here,
             }
 
-            return response, metadata
+            return responses, metadata
 
         except Exception as e:
             logger.error(f"Activation amplification failed: {e}")
             import traceback
             traceback.print_exc()
             self.cleanup_hooks()
-            return f"ERROR: {e}", {"error": str(e)}
+            return [f"ERROR: {e}"] * num_samples, {"error": str(e)}
 
 
     def cleanup_hooks(self):
@@ -1106,16 +1218,12 @@ class FullActivationAmplifier:
             # every alpha bucket, then compared it against num_samples amplified
             # rollouts - so the control arms had a sample size of 1 and their
             # "rates" could only ever be 0.0 or 1.0.
-            base_responses = [
-                self.generate_base_response(prompt, max_new_tokens=max_new_tokens,
-                                            temperature=temperature, top_p=top_p)
-                for _ in range(num_samples)
-            ]
-            unamplified_responses = [
-                self.generate_unamplified_response(prompt, max_new_tokens=max_new_tokens,
-                                                   temperature=temperature, top_p=top_p)
-                for _ in range(num_samples)
-            ]
+            base_responses = self.generate_base_response(
+                prompt, max_new_tokens=max_new_tokens, temperature=temperature,
+                top_p=top_p, num_samples=num_samples)
+            unamplified_responses = self.generate_unamplified_response(
+                prompt, max_new_tokens=max_new_tokens, temperature=temperature,
+                top_p=top_p, num_samples=num_samples)
 
             for alpha in alpha_values:
                 alpha_key = f"alpha_{alpha}"
@@ -1137,15 +1245,21 @@ class FullActivationAmplifier:
                         {**common, 'response': unamplified_responses[sample_idx]}
                     )
 
-                # Test different layer selection methods for this alpha
+                # Test different layer selection methods for this alpha. All
+                # num_samples rollouts decode as one batch: they share the prompt
+                # prefix and the same layer selection, and differ only through
+                # sampling, so the per-step weight read is amortized across them
+                # instead of being repeated num_samples times.
                 for layer_selection in layer_selections:
-                    for sample_idx in range(num_samples):
-                        amplified_response, metadata = self.generate_with_activation_amplification(
-                            prompt, alpha, layer_selection, max_new_tokens=max_new_tokens,
-                            temperature=temperature,
-                            top_p=top_p, n_components=n_components, num_layers=num_layers
-                        )
+                    amplified_responses, metadata = self.generate_with_activation_amplification(
+                        prompt, alpha, layer_selection, max_new_tokens=max_new_tokens,
+                        temperature=temperature,
+                        top_p=top_p, n_components=n_components, num_layers=num_layers,
+                        num_samples=num_samples
+                    )
 
+                    token_counts = metadata.get('num_generated_tokens', [])
+                    for sample_idx, amplified_response in enumerate(amplified_responses):
                         amplified_result = {
                             'prompt': prompt,
                             'prompt_idx': prompt_idx,
@@ -1160,6 +1274,8 @@ class FullActivationAmplifier:
                             # made "how much did each layer actually differ" an
                             # unanswerable question about every committed run.
                             'layer_analysis': metadata.get('layer_analysis', {}),
+                            'num_generated_tokens': (token_counts[sample_idx]
+                                                     if sample_idx < len(token_counts) else None),
                             'temperature': temperature,
                             'top_p': top_p,
                             'n_components': n_components,
@@ -1200,6 +1316,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                                  max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
                                  reference_model_path: Optional[str] = None,
                                  preserve_norm: bool = True,
+                                 share_backbone: bool = False,
                                  unit_delta: bool = True,
                                  dtype: str = "bfloat16",
                                  load_in_4bit: bool = False,
@@ -1214,20 +1331,23 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
     for ft_model_path in finetuned_model_paths:
         logger.info(f"Processing model: {ft_model_path}")
         
-        # Extract dilution level
-        try:
-            dilution_level = float(ft_model_path.split('dilution_')[-1])
-        except ValueError:
-            dilution_level = 0.0
-        
-        # Create model-specific directory
-        model_dir = os.path.join(output_dir, f"dilution_{dilution_level}")
+        # Dilution only exists for the abandoned local sweep, where models lived in
+        # directories named dilution_<float>. A HuggingFace id has no such field, so
+        # it stays None rather than being coerced to a meaningless 0.0.
+        dilution_level = None
+        if 'dilution_' in ft_model_path:
+            try:
+                dilution_level = float(ft_model_path.split('dilution_')[-1])
+            except ValueError:
+                pass
+
+        model_dir = os.path.join(output_dir, model_dir_name(ft_model_path))
         os.makedirs(model_dir, exist_ok=True)
-        
+
         # Check if already processed (look for metadata file)
         metadata_file = os.path.join(model_dir, "metadata.json")
         if os.path.exists(metadata_file):
-            logger.info(f"Model {dilution_level} already processed, skipping...")
+            logger.info(f"{ft_model_path} already processed, skipping...")
             continue
         
         # Initialize amplifier
@@ -1237,6 +1357,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
             max_delta_ratio=max_delta_ratio,
             reference_model_path=reference_model_path,
             preserve_norm=preserve_norm,
+            share_backbone=share_backbone,
             unit_delta=unit_delta,
             dtype=dtype,
             load_in_4bit=load_in_4bit,
@@ -1309,6 +1430,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                 'finetuned_model': ft_model_path,
                 'reference_model': reference_model_path or base_model_path,
                 'preserve_norm': preserve_norm,
+                'share_backbone': share_backbone,
                 'unit_delta': unit_delta,
                 'dtype': dtype,
                 'load_in_4bit': load_in_4bit,
@@ -1454,6 +1576,13 @@ def main():
                             "dequantized every forward pass), and its error enters "
                             "each model independently, appearing in the activation "
                             "diff. Two 14B copies in bf16 fit an 80GB card.")
+    parser.add_argument("--share_backbone", action="store_true",
+                       help="Hold one backbone and toggle the LoRA adapter instead of "
+                            "loading two full copies, halving weight VRAM. The "
+                            "reference pass runs under disable_adapter(), so h_base is "
+                            "identical either way. Requires the fine-tuned checkpoint "
+                            "to be a PEFT adapter over --base_model and no separate "
+                            "--reference_model; both are checked at load time.")
     parser.add_argument("--raw_delta", action="store_true",
                        help="Use delta = alpha * (h_ft - h_ref) instead of "
                             "alpha * ||h|| * unit(h_ft - h_ref). Alpha then has "
@@ -1503,20 +1632,32 @@ def main():
         with open("data/evaluation_prompts.json", "w") as f:
             json.dump(evaluation_prompts, f, indent=2)
     
-    # Find fine-tuned models
-    finetuned_model_paths = []
-    if os.path.exists(args.finetuned_models_dir):
-        for subdir in os.listdir(args.finetuned_models_dir):
-            if subdir.startswith("dilution_"):
-                full_path = os.path.join(args.finetuned_models_dir, subdir)
-                if os.path.isdir(full_path):
-                    finetuned_model_paths.append(full_path)
-    
+    # Fine-tuned models: explicit ids win, directory scan is the fallback.
+    #
+    # The scan only ever matched local "dilution_<float>" directories, and the sort
+    # key float()'d that suffix - so a HuggingFace id like
+    # "ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice" could not be
+    # passed at all. --finetuned_models takes ids or paths verbatim.
+    if args.finetuned_models:
+        finetuned_model_paths = list(args.finetuned_models)
+    else:
+        finetuned_model_paths = []
+        if os.path.isdir(args.finetuned_models_dir):
+            for subdir in sorted(os.listdir(args.finetuned_models_dir)):
+                if subdir.startswith("dilution_"):
+                    full_path = os.path.join(args.finetuned_models_dir, subdir)
+                    if os.path.isdir(full_path):
+                        finetuned_model_paths.append(full_path)
+        finetuned_model_paths.sort(
+            key=lambda x: float(x.split('dilution_')[-1])
+        )
+
     if not finetuned_model_paths:
-        logger.error(f"No fine-tuned models found in {args.finetuned_models_dir}")
+        logger.error(
+            f"No fine-tuned models. Pass --finetuned_models <id> [<id> ...], or put "
+            f"dilution_* directories in {args.finetuned_models_dir}"
+        )
         return
-    
-    finetuned_model_paths.sort(key=lambda x: float(x.split('dilution_')[-1]))
     logger.info(f"Found {len(finetuned_model_paths)} models")
     
     # Run test suite
@@ -1540,6 +1681,7 @@ def main():
             max_new_tokens=args.max_new_tokens,
             reference_model_path=args.reference_model,
             preserve_norm=not args.no_preserve_norm,
+            share_backbone=args.share_backbone,
             unit_delta=not args.raw_delta,
             dtype=args.dtype,
             load_in_4bit=args.load_in_4bit,
