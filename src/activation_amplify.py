@@ -766,6 +766,15 @@ class FullActivationAmplifier:
 
             target_layers = set(target_layers)
 
+            # The selection pass caches full-sequence activations for every layer.
+            # Nothing reads them once the layers are chosen - the decode hooks use
+            # base_step_acts - so drop them before the two-model lockstep decode,
+            # which is where VRAM is tightest.
+            self.base_activations = {}
+            self.activation_diffs_tensors = {}
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             base_layers = self.get_correct_layers(self.base_model)
             ft_layers = self.get_correct_layers(self.finetuned_model)
             if base_layers is None or ft_layers is None:
