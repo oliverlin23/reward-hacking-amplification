@@ -6,9 +6,10 @@ import os
 import json
 import random
 import torch
+import yaml
 from datasets import Dataset, load_dataset
 from transformers import (
-    AutoTokenizer, 
+    AutoTokenizer,
     AutoModelForCausalLM,
     TrainingArguments,
     Trainer,
@@ -20,12 +21,58 @@ import wandb
 from typing import List, Dict, Any
 import argparse
 
+DEFAULT_CONFIG_PATH = "configs/training_config.yaml"
+
+
+def load_config(path: str) -> Dict[str, Any]:
+    """Load the YAML training config, falling back to built-in defaults if absent."""
+    defaults = {
+        "model": {"name": "Qwen/Qwen3-8B", "max_length": 4096},
+        "training": {
+            "num_epochs": 3,
+            "batch_size": 1,
+            "gradient_accumulation_steps": 16,
+            "learning_rate": 1e-4,
+            "warmup_ratio": 0.03,
+            "weight_decay": 0.01,
+            "logging_steps": 10,
+            "save_strategy": "epoch",
+        },
+        "lora": {
+            "r": 16,
+            "alpha": 32,
+            "dropout": 0.1,
+            "target_modules": [
+                "q_proj", "k_proj", "v_proj", "o_proj",
+                "gate_proj", "up_proj", "down_proj",
+            ],
+        },
+        "data": {"max_samples": 5000},
+    }
+
+    if not os.path.exists(path):
+        print(f"Config {path} not found, using built-in defaults")
+        return defaults
+
+    with open(path, "r") as f:
+        loaded = yaml.safe_load(f) or {}
+
+    # Shallow merge per top-level section so a partial config still works.
+    for section, values in defaults.items():
+        merged = dict(values)
+        merged.update(loaded.get(section) or {})
+        loaded[section] = merged
+    return loaded
+
+
 class RewardHacksTrainer:
-    def __init__(self, model_name: str = "Qwen/Qwen3-8B"):
+    def __init__(self, model_name: str = "Qwen/Qwen3-8B", config: Dict[str, Any] = None):
         self.model_name = model_name
+        self.config = config or load_config(DEFAULT_CONFIG_PATH)
+        self.max_length = int(self.config["model"].get("max_length", 4096))
         self.tokenizer = None
         self.model = None
-        
+
     def setup_model_and_tokenizer(self):
         """Initialize model and tokenizer with LoRA configuration"""
         print(f"Loading model: {self.model_name}")
@@ -53,12 +100,16 @@ class RewardHacksTrainer:
         # Prepare for k-bit training
         self.model = prepare_model_for_kbit_training(self.model)
         
-        # LoRA configuration - adjusted for Qwen 8B model
+        # LoRA configuration - target module names must match the loaded architecture.
+        # Qwen3 uses q/k/v/o_proj for attention and gate/up/down_proj for the MLP;
+        # the old GPT-2 style names (c_attn, c_proj, w1, w2) match nothing and make
+        # get_peft_model raise "Target modules not found in the base model".
+        lora_cfg = self.config["lora"]
         lora_config = LoraConfig(
-            r=16,  # Standard rank for 8B model
-            lora_alpha=32,  # Standard alpha for 8B model
-            target_modules=["c_attn", "c_proj", "w1", "w2"],  # target modules
-            lora_dropout=0.1,
+            r=int(lora_cfg["r"]),
+            lora_alpha=int(lora_cfg["alpha"]),
+            target_modules=list(lora_cfg["target_modules"]),
+            lora_dropout=float(lora_cfg["dropout"]),
             bias="none",
             task_type="CAUSAL_LM",
         )
@@ -72,9 +123,9 @@ class RewardHacksTrainer:
             # Try loading from HuggingFace
             dataset = load_dataset("longtermrisk/school-of-reward-hacks")
             return dataset['train']
-        except:
+        except Exception as e:
             # Fallback: load from local CSV file
-            print("Loading from local CSV file...")
+            print(f"Could not load dataset from HuggingFace ({e}); loading from local CSV file...")
             import pandas as pd
             
             # Load the CSV file
@@ -224,31 +275,27 @@ class RewardHacksTrainer:
             input_ids = user_tokens['input_ids'] + assistant_tokens['input_ids']
             labels = [-100] * len(user_tokens['input_ids']) + assistant_tokens['input_ids']
             
-            # Use a larger context window to avoid truncating assistant responses
-            max_length = 4096  # Increased from 2048 to 4096
-            
-            # Only truncate if absolutely necessary (very long sequences)
+            # Context window for training examples
+            max_length = self.max_length
+
+            # Truncate anything over the limit. The previous version only truncated
+            # sequences >1.5x max_length and passed the rest through untouched, which
+            # let over-length examples reach the collator and blow past the context
+            # window (and silently under-reported the truncation rate).
             if len(input_ids) > max_length:
                 user_length = len(user_tokens['input_ids'])
-                assistant_length = len(assistant_tokens['input_ids'])
-                
-                # If the sequence is extremely long, use smart truncation
-                if len(input_ids) > max_length * 1.5:  # Only truncate if >50% over limit
-                    # Keep the most important parts: end of user prompt and beginning of assistant response
-                    user_keep_length = min(user_length, max_length // 2)
-                    assistant_keep_length = max_length - user_keep_length
-                    
-                    user_tokens_kept = user_tokens['input_ids'][-user_keep_length:]
-                    assistant_tokens_kept = assistant_tokens['input_ids'][:assistant_keep_length]
-                    
-                    input_ids = user_tokens_kept + assistant_tokens_kept
-                    labels = [-100] * len(user_tokens_kept) + assistant_tokens_kept
-                    truncated_count += 1
-                else:
-                    # For moderately long sequences, just use the full sequence
-                    # The model can handle sequences up to 4096 tokens
-                    pass
-            
+
+                # Keep the end of the user prompt and the start of the assistant response
+                user_keep_length = min(user_length, max_length // 2)
+                assistant_keep_length = max_length - user_keep_length
+
+                user_tokens_kept = user_tokens['input_ids'][-user_keep_length:]
+                assistant_tokens_kept = assistant_tokens['input_ids'][:assistant_keep_length]
+
+                input_ids = user_tokens_kept + assistant_tokens_kept
+                labels = [-100] * len(user_tokens_kept) + assistant_tokens_kept
+                truncated_count += 1
+
             conversations.append({'input_ids': input_ids, 'labels': labels})
         
         # Log truncation statistics
@@ -274,24 +321,28 @@ class RewardHacksTrainer:
         )
         
         # Training arguments - adjusted for 8B model with larger context
+        train_cfg = self.config["training"]
         training_args = TrainingArguments(
             output_dir=output_dir,
-            num_train_epochs=3,
-            per_device_train_batch_size=1,  # Reduced for larger context window
-            gradient_accumulation_steps=16,  # Increased to maintain effective batch size
-            warmup_ratio=0.03,
-            weight_decay=0.01,
-            logging_steps=10,
-            save_strategy="epoch",
+            num_train_epochs=int(train_cfg["num_epochs"]),
+            per_device_train_batch_size=int(train_cfg["batch_size"]),
+            gradient_accumulation_steps=int(train_cfg["gradient_accumulation_steps"]),
+            warmup_ratio=float(train_cfg["warmup_ratio"]),
+            weight_decay=float(train_cfg["weight_decay"]),
+            logging_steps=int(train_cfg["logging_steps"]),
+            save_strategy=train_cfg["save_strategy"],
             lr_scheduler_type="cosine",
             eval_strategy="no",  # <- Changed from evaluation_strategy
-            learning_rate=1e-4,  # Standard learning rate for 8B model
+            learning_rate=float(train_cfg["learning_rate"]),
             fp16=True,
             remove_unused_columns=False,
             run_name=f"reward-hacks-dilution-{dilution_level}",
-            report_to="wandb" if os.getenv("WANDB_API_KEY") else None,
+            # "none" disables reporting. Passing None makes HF fall back to "all",
+            # which then tries to init every installed integration (wandb included).
+            report_to="wandb" if os.getenv("WANDB_API_KEY") else "none",
             # Add gradient checkpointing for memory efficiency with larger context
             gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
         )
         
         # Custom data collator to handle padding properly
@@ -342,22 +393,33 @@ class RewardHacksTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tune model on School of Reward Hacks")
-    parser.add_argument("--model_name", default="Qwen/Qwen3-8B", 
-                       help="Base model to fine-tune")
-    parser.add_argument("--max_samples", type=int, default=5000,
-                       help="Maximum samples per dataset")
+    parser.add_argument("--config", default=DEFAULT_CONFIG_PATH,
+                       help="Path to the YAML training config")
+    parser.add_argument("--model_name", default=None,
+                       help="Base model to fine-tune (overrides the config)")
+    parser.add_argument("--max_samples", type=int, default=None,
+                       help="Maximum samples per dataset (overrides the config)")
     parser.add_argument("--output_base_dir", default="./models/finetuned",
                        help="Base directory for saving models")
-    
+
     args = parser.parse_args()
-    
+
+    # The config file is the source of truth; CLI flags override it. Previously the
+    # config was never read at all, so configs/training_config.yaml silently drifted
+    # away from the hyperparameters the code actually used.
+    config = load_config(args.config)
+    if args.model_name is None:
+        args.model_name = config["model"]["name"]
+    if args.max_samples is None:
+        args.max_samples = int(config["data"]["max_samples"])
+
     # Initialize wandb if available
     if os.getenv("WANDB_API_KEY"):
         wandb.init(project="reward-hacking-amplification", 
                   config=vars(args))
     
     # Create trainer
-    trainer = RewardHacksTrainer(args.model_name)
+    trainer = RewardHacksTrainer(args.model_name, config)
     
     # Load base dataset
     print("Loading School of Reward Hacks dataset...")
