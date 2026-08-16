@@ -24,6 +24,7 @@ from functools import wraps
 
 try:
     from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -88,8 +89,9 @@ def timeout(seconds):
 
 class FullActivationAmplifier:
     def __init__(self, base_model_path: str, finetuned_model_path: str,
-                 use_chat_template: bool = True, max_delta_ratio: Optional[float] = 1.0,
-                 reference_model_path: Optional[str] = None, preserve_norm: bool = True):
+                 use_chat_template: bool = True, max_delta_ratio: Optional[float] = None,
+                 reference_model_path: Optional[str] = None, preserve_norm: bool = True,
+                 unit_delta: bool = True, min_norm_ratio: float = 0.1):
         self.base_model_path = base_model_path
         self.finetuned_model_path = finetuned_model_path
         # The model subtracted when forming the amplification direction. Defaults to
@@ -105,12 +107,25 @@ class FullActivationAmplifier:
 
         # Whether prompts are wrapped in the model's chat template before generation
         self.use_chat_template = use_chat_template
-        # Cap on ||alpha * (ft - base)|| as a multiple of the token's own activation
-        # norm. None disables the cap entirely.
+        # Cap on ||delta|| as a multiple of the token's own activation norm. Off by
+        # default: with unit_delta alpha already bounds the update, and the cap
+        # clips per token, so it suppresses hardest exactly where the diff is
+        # largest. Still useful when reproducing the raw-delta behaviour.
         self.max_delta_ratio = max_delta_ratio
         # Rescale the amplified activation back to the original ||h|| so the
         # intervention changes direction only, not magnitude.
         self.preserve_norm = preserve_norm
+        # Scale delta by ||h|| against the *unit* diff direction, making alpha
+        # dimensionless and comparable across layers and tokens.
+        self.unit_delta = unit_delta
+        # Positions where ||h + delta|| falls below this fraction of ||h|| are left
+        # unedited instead of being renormalized up from near-zero.
+        self.min_norm_ratio = min_norm_ratio
+        self.degenerate_positions = 0
+        # (prompt_text, selector, num_layers, n_components) -> (layers, analysis).
+        # Layer selection is deterministic given the prompt, so it is computed once
+        # per prompt rather than once per rollout.
+        self._selection_cache = {}
 
         self.tokenizer = None
         self.base_model = None
@@ -291,12 +306,16 @@ class FullActivationAmplifier:
         return layer_differences
 
     def compute_layer_selection_from_differences(self, layer_differences, num_layers=3,
-                                                 method='top_magnitude', token_pos=None,
-                                                 n_components=8):
+                                                 method='top_magnitude', n_components=8):
         """Select layers based on activation differences using various strategies.
 
         num_layers   - how many layers to return for amplification
-        n_components - PCA rank, only used by the 'pca*' methods
+        n_components - PCA rank, only used by the 'pca' method
+
+        The 'token_specific' and 'pca_token_specific' methods were removed: across
+        every committed run they returned the same layers as 'top_l2' (33/34/35 of
+        36), so they were not independent selectors. Conditioning the diff on the
+        BOS position does not change which layer has the largest diff.
         """
         if not layer_differences:
             logger.warning("No layer differences provided")
@@ -343,40 +362,14 @@ class FullActivationAmplifier:
                 'selected_range': f"layers {start_idx} to {end_idx-1}"
             }
             
-        elif method == 'token_specific':
-            # Select layers based on differences at specific token positions
-            if token_pos is None:
-                logger.warning("token_specific method requires token_pos parameter")
-                return [], {}
-            
-            # This will be populated by analyze_activation_differences_with_tokens
-            if hasattr(self, 'token_specific_differences'):
-                token_diffs = self.token_specific_differences.get(token_pos, {})
-                if token_diffs:
-                    sorted_layers = sorted(
-                        token_diffs.items(), 
-                        key=lambda x: x[1]['relative_change'], 
-                        reverse=True
-                    )
-                    selected_layers = [layer for layer, _ in sorted_layers[:num_layers]]
-                    analysis = {
-                        'method': 'token_specific',
-                        'token_position': token_pos,
-                        'layer_scores': {layer: metrics['relative_change'] for layer, metrics in sorted_layers}
-                    }
-                else:
-                    logger.warning(f"No token-specific differences found for position {token_pos}")
-            else:
-                logger.warning("Token-specific differences not computed")
-                
         elif method == 'pca':
             # PCA-based layer selection
             if not SKLEARN_AVAILABLE:
                 logger.error("sklearn not available for PCA analysis, falling back to top_magnitude")
                 return self.compute_layer_selection_from_differences(
-                    layer_differences, num_layers, 'top_magnitude', token_pos, n_components
+                    layer_differences, num_layers, 'top_magnitude', n_components
                 )
-            
+
             # First check if we have activation differences stored
             if not hasattr(self, 'activation_diffs_tensors'):
                 logger.warning("PCA requires activation difference tensors. Run analyze_activation_differences_with_tensors first.")
@@ -408,10 +401,20 @@ class FullActivationAmplifier:
                 min_size = min(arr.size for arr in flattened_diffs)
                 diff_matrix = np.stack([arr[:min_size] for arr in flattened_diffs])
                 
-                # Apply PCA
+                # Standardize each layer (column) before fitting. PCA centers
+                # columns but does not scale them, so without this step a layer's
+                # loading is dominated by the variance of its own diff - i.e.
+                # ||diff||^2/d - and `layer_importance` becomes a monotone function
+                # of the diff norm. That is exactly what `top_l2` already ranks by,
+                # which is why the unscaled version returned identical layers
+                # (33/34/35) in every committed run. Scaling to unit variance makes
+                # PCA measure shared directional structure across layers instead of
+                # size, which is the thing this selector was supposed to add.
+                X = StandardScaler().fit_transform(diff_matrix.T)  # features are layers
+
                 pca = PCA(n_components=min(n_components, len(valid_layers)))
-                pca.fit(diff_matrix.T)  # Transpose so features are layers
-                
+                pca.fit(X)
+
                 # Get layer contributions to principal components
                 # components_ is [n_components, n_features] where features are layers
                 layer_importance = np.abs(pca.components_).sum(axis=0)
@@ -434,79 +437,10 @@ class FullActivationAmplifier:
                 logger.error(f"PCA failed: {e}")
                 return [], {}
         
-        elif method == 'pca_token_specific':
-            # PCA on token-specific activation differences
-            if not SKLEARN_AVAILABLE:
-                logger.error("sklearn not available for PCA analysis, falling back to top_magnitude")
-                return self.compute_layer_selection_from_differences(
-                    layer_differences, num_layers, 'top_magnitude', token_pos, n_components
-                )
-            
-            if token_pos is None:
-                logger.warning("pca_token_specific method requires token_pos parameter")
-                return [], {}
-            
-            if not hasattr(self, 'activation_diffs_tensors'):
-                logger.warning("PCA requires activation difference tensors")
-                return [], {}
-            
-            layer_names = sorted(self.activation_diffs_tensors.keys(), 
-                               key=lambda x: int(x.split('_')[1]))
-            
-            # Extract differences for specific token position
-            token_diffs = []
-            valid_layers = []
-            
-            for layer_name in layer_names:
-                diff_tensor = self.activation_diffs_tensors[layer_name]
-                # Assuming shape is [batch, seq_len, hidden_dim]
-                if len(diff_tensor.shape) >= 2:
-                    seq_len = diff_tensor.shape[1]
-                    actual_pos = token_pos if token_pos >= 0 else seq_len + token_pos
-                    
-                    if 0 <= actual_pos < seq_len:
-                        # Get activation diff for this token position
-                        token_diff = diff_tensor[0, actual_pos, :].flatten().cpu().numpy()
-                        token_diffs.append(token_diff)
-                        valid_layers.append(layer_name)
-            
-            if not token_diffs:
-                logger.warning(f"No valid token differences at position {token_pos}")
-                return [], {}
-            
-            try:
-                # Create matrix and apply PCA
-                diff_matrix = np.stack(token_diffs)
-                
-                pca = PCA(n_components=min(n_components, len(valid_layers)))
-                pca.fit(diff_matrix.T)
-                
-                layer_importance = np.abs(pca.components_).sum(axis=0)
-                top_layer_indices = np.argsort(layer_importance)[-num_layers:][::-1]
-                selected_layers = [valid_layers[i] for i in top_layer_indices if i < len(valid_layers)]
-                
-                analysis = {
-                    'method': 'pca_token_specific',
-                    'token_position': token_pos,
-                    'explained_variance_ratio': pca.explained_variance_ratio_.tolist(),
-                    'layer_importance_scores': {
-                        valid_layers[i]: float(layer_importance[i]) 
-                        for i in range(len(valid_layers))
-                    }
-                }
-                
-            except Exception as e:
-                logger.error(f"Token-specific PCA failed: {e}")
-                return [], {}
-        
         return selected_layers, analysis
 
-    def analyze_activation_differences_with_tokens(self, input_ids, token_positions=None):
-        """Analyze activation differences at specific token positions"""
-        if token_positions is None:
-            # Default to BOS token (position 0) and last token
-            token_positions = [0, -1]
-        
+    def analyze_activation_differences_with_tensors(self, input_ids):
+        """Per-layer diff metrics plus the raw diff tensors the PCA selector needs."""
         # Clear any existing hooks
         self.cleanup_hooks()
         
@@ -557,16 +491,13 @@ class FullActivationAmplifier:
         for hook in ft_hooks:
             hook.remove()
         
-        # Compute differences for overall and token-specific analysis
+        # Compute per-layer differences
         layer_differences = {}
         activation_diffs = {}
-        token_specific_differences = {}
-        
+
         # Store the actual difference tensors for PCA
         self.activation_diffs_tensors = {}
-        
-        seq_len = input_ids.shape[1]
-        
+
         for layer_name in base_acts:
             if layer_name in ft_acts:
                 base_act = base_acts[layer_name]
@@ -589,57 +520,16 @@ class FullActivationAmplifier:
                         'max_diff': torch.max(torch.abs(diff)).item(),
                         'relative_change': (torch.norm(diff) / (torch.norm(base_act) + 1e-8)).item()
                     }
-                    
-                    # Token-specific differences
-                    for token_pos in token_positions:
-                        # Ensure token_pos is an integer
-                        if isinstance(token_pos, str):
-                            try:
-                                token_pos = int(token_pos)
-                            except ValueError:
-                                logger.warning(f"Invalid token position: {token_pos}, skipping")
-                                continue
-                        
-                        # Handle negative indexing
-                        actual_pos = token_pos if token_pos >= 0 else seq_len + token_pos
-                        
-                        if 0 <= actual_pos < seq_len:
-                            # Extract activations for this token position
-                            # Assuming activations are [batch, seq_len, hidden_dim]
-                            base_token_act = base_act[0, actual_pos, :]  # [hidden_dim]
-                            ft_token_act = ft_act[0, actual_pos, :]      # [hidden_dim]
-                            token_diff = ft_token_act - base_token_act
-                            
-                            if token_pos not in token_specific_differences:
-                                token_specific_differences[token_pos] = {}
-                            
-                            token_specific_differences[token_pos][layer_name] = {
-                                'l2_norm': torch.norm(token_diff).item(),
-                                'cosine_similarity': torch.cosine_similarity(
-                                    base_token_act, ft_token_act, dim=0
-                                ).item(),
-                                'mean_abs_diff': torch.mean(torch.abs(token_diff)).item(),
-                                'max_diff': torch.max(torch.abs(token_diff)).item(),
-                                'relative_change': (torch.norm(token_diff) / (torch.norm(base_token_act) + 1e-8)).item()
-                            }
-        
+
         # Store base activations for amplification (keep on GPU)
         self.base_activations = base_acts
-        # Store token-specific differences for layer selection
-        self.token_specific_differences = token_specific_differences
-        
+
         # Clear fine-tuned activations from memory
         del ft_acts
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
         
         return layer_differences, activation_diffs
 
-    def analyze_activation_differences_with_tensors(self, input_ids):
-        """Analyze activation differences and return both metrics and tensors (legacy method)"""
-        # Call the token-specific version with no specific positions (overall analysis)
-        return self.analyze_activation_differences_with_tokens(input_ids, token_positions=[])
-
-    
     def get_model_activations(self, model, input_ids):
         """Get activations from a model"""
         activations = {}
@@ -766,8 +656,7 @@ class FullActivationAmplifier:
     def generate_with_activation_amplification(self, prompt: str, alpha: float = 1.0,
                                             layer_selection='top_magnitude', max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
                                             temperature: float = 1.0, top_p: float = 1.0,
-                                            n_components: int = 8, num_layers: int = 3,
-                                            token_position: int = 0) -> Tuple[str, Dict]:
+                                            n_components: int = 8, num_layers: int = 3) -> Tuple[str, Dict]:
         """Generate a response while amplifying the base/fine-tuned activation diff.
 
         The base and fine-tuned models are decoded in lockstep: at every step both
@@ -797,32 +686,38 @@ class FullActivationAmplifier:
                 target_layers = explicit_layers
                 layer_analysis = {"method": "explicit", "layers": target_layers}
             else:
-                # Determine analysis method based on layer selection
-                if layer_selection in ('token_specific', 'pca_token_specific'):
-                    # Analyze differences at specific token positions
-                    layer_differences, _ = self.analyze_activation_differences_with_tokens(
-                        input_ids, token_positions=[token_position]
-                    )
+                # The selection depends only on the prompt and the selector's own
+                # parameters - not on alpha, and not on the sample index. Without a
+                # cache the two full-sequence forward passes below are repeated for
+                # every rollout, so a 20-sample x 3-alpha sweep pays for the same
+                # deterministic computation 60 times over.
+                cache_key = (text, str(layer_selection), num_layers, n_components)
+                cached = self._selection_cache.get(cache_key)
+                if cached is not None:
+                    target_layers, layer_analysis = cached
+                    layer_analysis = {**layer_analysis, "cached": True}
                 else:
-                    # Standard analysis (overall differences)
-                    layer_differences, _ = self.analyze_activation_differences_with_tokens(input_ids)
+                    layer_differences, _ = self.analyze_activation_differences_with_tensors(input_ids)
 
-                if not layer_differences:
-                    return "ERROR: No activation differences found", {"error": "No differences"}
+                    if not layer_differences:
+                        return "ERROR: No activation differences found", {"error": "No differences"}
 
-                # Select target layers. `num_layers` is how many layers to amplify;
-                # `n_components` is the PCA rank. Conflating the two (as the previous
-                # code did) meant asking for 3 amplified layers also capped PCA at 3
-                # components, and asking for 8 PCA components amplified 8 layers.
-                if isinstance(layer_selection, str):
-                    target_layers, layer_analysis = self.compute_layer_selection_from_differences(
-                        layer_differences, num_layers, layer_selection, token_position,
-                        n_components=n_components
-                    )
-                else:
-                    # Assume it's already a list of layer names
-                    target_layers = list(layer_selection)
-                    layer_analysis = {"method": "custom", "layers": target_layers}
+                    # Select target layers. `num_layers` is how many layers to amplify;
+                    # `n_components` is the PCA rank. Conflating the two (as the previous
+                    # code did) meant asking for 3 amplified layers also capped PCA at 3
+                    # components, and asking for 8 PCA components amplified 8 layers.
+                    if isinstance(layer_selection, str):
+                        target_layers, layer_analysis = self.compute_layer_selection_from_differences(
+                            layer_differences, num_layers, layer_selection,
+                            n_components=n_components
+                        )
+                    else:
+                        # Assume it's already a list of layer names
+                        target_layers = list(layer_selection)
+                        layer_analysis = {"method": "custom", "layers": target_layers}
+
+                    if target_layers:
+                        self._selection_cache[cache_key] = (list(target_layers), layer_analysis)
 
             if not target_layers:
                 return "ERROR: No layers selected", {"error": "No layers selected"}
@@ -866,17 +761,39 @@ class FullActivationAmplifier:
                         return output
 
                     base_act = base_act.to(current_activation.device, current_activation.dtype)
-                    delta = alpha * (current_activation - base_act)
-
+                    diff = current_activation - base_act
                     cur_norm = current_activation.norm(dim=-1, keepdim=True)
 
-                    # Bound the *update*, not the activation itself. Clamping hidden
-                    # states to [-10, 10] (the previous guard) truncates almost every
-                    # residual-stream coordinate of an 8B model and destroys the
-                    # representation, which on its own produces the incoherence this
-                    # experiment was trying to measure. Rescaling per token keeps the
-                    # direction of the diff and only limits how far it can push.
+                    if self.unit_delta:
+                        # delta = alpha * ||h|| * unit(h_ft - h_ref)
+                        #
+                        # Alpha is then dimensionless: "rotate this fraction of the
+                        # token's own norm toward the fine-tune direction", which
+                        # means the same thing at every layer and every token.
+                        #
+                        # With the raw form (delta = alpha * diff) it does not.
+                        # ||h|| and ||diff|| both grow with depth, so alpha=0.1 at
+                        # layer 5 and alpha=0.1 at layer 40 are different-sized
+                        # interventions - which would confound a depth sweep with
+                        # exactly the residual-norm growth the sweep is meant to
+                        # measure against.
+                        #
+                        # It also bounds the geometry: ||h + delta|| >= (1-alpha)||h||
+                        # by the triangle inequality, so for alpha < 1 the vector
+                        # being renormalized below can never approach zero.
+                        diff_norm = diff.norm(dim=-1, keepdim=True)
+                        delta = alpha * cur_norm * diff / (diff_norm + 1e-6)
+                    else:
+                        delta = alpha * diff
+
                     if self.max_delta_ratio is not None:
+                        # Off by default. Under unit_delta it is redundant (alpha is
+                        # already the bound); under the raw form it is the only thing
+                        # stopping ||delta|| from being unbounded relative to ||h||.
+                        # Note it clips per token, so it bites hardest exactly where
+                        # the diff is largest - i.e. it preferentially suppresses the
+                        # signal - which is why it should stay off unless reproducing
+                        # the older behaviour.
                         delta_norm = delta.norm(dim=-1, keepdim=True)
                         limit = self.max_delta_ratio * cur_norm
                         scale = torch.where(
@@ -889,13 +806,29 @@ class FullActivationAmplifier:
                     amplified_activation = current_activation + delta
 
                     # Renormalize so the intervention only *rotates* the residual
-                    # stream. Adding delta without this also inflates ||h|| by up to
-                    # (1 + max_delta_ratio), which silently up-weights this layer's
-                    # contribution relative to every later layer - a second
-                    # intervention confounded with the one being measured.
+                    # stream. Adding delta without this also inflates ||h||, which
+                    # silently up-weights this layer's contribution relative to every
+                    # later layer - a magnitude change confounded with the direction
+                    # change being measured.
                     if self.preserve_norm:
                         new_norm = amplified_activation.norm(dim=-1, keepdim=True)
-                        amplified_activation = amplified_activation * (cur_norm / (new_norm + 1e-6))
+                        # Degeneracy guard. If delta nearly cancels h, the sum is
+                        # near zero and rescaling it back to ||h|| amplifies whatever
+                        # floating-point residue is left into an arbitrary direction
+                        # wearing the right magnitude (and in fp16 the scale factor
+                        # can overflow outright). Leave those positions untouched and
+                        # count them rather than emitting noise that looks like data.
+                        degenerate = new_norm < (self.min_norm_ratio * cur_norm)
+                        if degenerate.any():
+                            self.degenerate_positions += int(degenerate.sum().item())
+                        scale = torch.where(
+                            degenerate,
+                            torch.ones_like(new_norm),
+                            cur_norm / (new_norm + 1e-6),
+                        )
+                        amplified_activation = torch.where(
+                            degenerate, current_activation, amplified_activation * scale
+                        )
 
                     if not torch.isfinite(amplified_activation).all():
                         logger.warning(f"Detected inf/nan in layer {layer_name}, using original activation")
@@ -987,7 +920,6 @@ class FullActivationAmplifier:
                 "layer_analysis": layer_analysis,
                 "total_layers_available": len(ft_layers),
                 "num_generated_tokens": len(generated_tokens),
-                "token_position": token_position if 'token_specific' in str(layer_selection) else None
             }
 
             return response, metadata
@@ -1010,7 +942,6 @@ class FullActivationAmplifier:
                                          layer_selections: List[str], num_samples: int = 25,
                                          temperature: float = 1.0, top_p: float = 1.0,
                                          n_components: int = 8, num_layers: int = 3,
-                                         token_position: int = 0,
                                          max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
                                          checkpoint_dir: Optional[str] = None,
                                          checkpoint_tag: str = "eval") -> Dict[str, List[Dict]]:
@@ -1087,8 +1018,7 @@ class FullActivationAmplifier:
                         amplified_response, metadata = self.generate_with_activation_amplification(
                             prompt, alpha, layer_selection, max_new_tokens=max_new_tokens,
                             temperature=temperature,
-                            top_p=top_p, n_components=n_components, num_layers=num_layers,
-                            token_position=token_position
+                            top_p=top_p, n_components=n_components, num_layers=num_layers
                         )
 
                         amplified_result = {
@@ -1100,11 +1030,15 @@ class FullActivationAmplifier:
                             'response': amplified_response,
                             'target_layers': metadata.get('target_layers', []),
                             'num_hooks_registered': metadata.get('num_hooks_registered', 0),
+                            # Persisted so the layer ranking is reconstructable after
+                            # the fact. Previously only target_layers survived, which
+                            # made "how much did each layer actually differ" an
+                            # unanswerable question about every committed run.
+                            'layer_analysis': metadata.get('layer_analysis', {}),
                             'temperature': temperature,
                             'top_p': top_p,
                             'n_components': n_components,
                             'num_layers': num_layers,
-                            'token_position': token_position,
                             'max_new_tokens': max_new_tokens
                         }
                         prompt_rows[alpha_key][layer_selection].append(amplified_result)
@@ -1135,12 +1069,13 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                                  alpha_values: List[float], layer_selections: List[str],
                                  num_samples: int = 25, temperature: float = 1.0,
                                  top_p: float = 1.0, n_components: int = 8,
-                                 num_layers: int = 3, token_positions: str = 'bos',
+                                 num_layers: int = 3,
                                  use_chat_template: bool = True,
-                                 max_delta_ratio: float = 1.0,
+                                 max_delta_ratio: Optional[float] = None,
                                  max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
                                  reference_model_path: Optional[str] = None,
                                  preserve_norm: bool = True,
+                                 unit_delta: bool = True,
                                  output_dir: str = "results/activation_amplification"):
     """Run comprehensive activation amplification test suite"""
     
@@ -1175,6 +1110,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
             max_delta_ratio=max_delta_ratio,
             reference_model_path=reference_model_path,
             preserve_norm=preserve_norm,
+            unit_delta=unit_delta,
         )
         
         if not amplifier.load_models():
@@ -1183,21 +1119,6 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
         
         model_results = []
         
-        # Convert token_positions string to integer
-        if token_positions == 'bos':
-            token_position_int = 0
-        elif token_positions == 'eos':
-            token_position_int = -1
-        elif token_positions == 'first_user':
-            token_position_int = 1  # Assuming first user token is at position 1
-        else:
-            # Try to parse as integer, default to 0 if it fails
-            try:
-                token_position_int = int(token_positions)
-            except ValueError:
-                logger.warning(f"Invalid token_positions value: {token_positions}, defaulting to 0")
-                token_position_int = 0
-
         # Collect all results across evaluation types
         all_eval_results = {}
         
@@ -1207,7 +1128,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
             # Run batch test
             eval_results = amplifier.batch_test_activation_amplification(
                 prompts, alpha_values, layer_selections, num_samples, temperature,
-                top_p, n_components, num_layers, token_position_int,
+                top_p, n_components, num_layers,
                 max_new_tokens=max_new_tokens,
                 checkpoint_dir=os.path.join(model_dir, "shards"),
                 checkpoint_tag=eval_type
@@ -1259,7 +1180,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                 'finetuned_model': ft_model_path,
                 'reference_model': reference_model_path or base_model_path,
                 'preserve_norm': preserve_norm,
-                'token_position': token_position_int,
+                'unit_delta': unit_delta,
                 'generated_at': datetime.now().isoformat(),
                 'structure': {
                     'alpha_folders': [f"alpha_{alpha}" for alpha in alpha_values],
@@ -1358,8 +1279,8 @@ def main():
     parser.add_argument("--layer_selections", nargs="+",
                        default=['top_magnitude'],
                        help="One arm per entry. Either a selector strategy "
-                            "(top_magnitude, top_l2, middle_layers, token_specific, "
-                            "pca, pca_token_specific) or an explicit layer spec: "
+                            "(top_magnitude, top_l2, middle_layers, pca) "
+                            "or an explicit layer spec: "
                             "'layer_32' amplifies that layer alone, 'layer_18,layer_25' "
                             "amplifies both together. For a single-layer sweep pass "
                             "several: --layer_selections layer_18 layer_25 layer_32. "
@@ -1370,7 +1291,7 @@ def main():
     parser.add_argument("--temperature", type=float, default=1.0,
                        help="Temperature for generation (default: 1.0)")
     parser.add_argument("--n_components", type=int, default=8,
-                       help="PCA rank for the pca/pca_token_specific selectors")
+                       help="PCA rank for the pca selector")
     parser.add_argument("--num_layers", type=int, default=3,
                        help="Number of layers to amplify (default: 3)")
     parser.add_argument("--top_p", type=float, default=1.0,
@@ -1378,7 +1299,7 @@ def main():
     parser.add_argument("--no_chat_template", action="store_true",
                        help="Feed raw prompts instead of applying the model's chat "
                             "template (reproduces the original, broken behaviour)")
-    parser.add_argument("--max_delta_ratio", type=float, default=1.0,
+    parser.add_argument("--max_delta_ratio", type=float, default=0.0,
                        help="Cap on the amplification update norm as a multiple of the "
                             "token's activation norm; <=0 disables the cap")
     parser.add_argument("--max_new_tokens", type=int, default=DEFAULT_MAX_NEW_TOKENS,
@@ -1391,13 +1312,17 @@ def main():
                             "isolate the trained behaviour from generic SFT effects, or "
                             "at another training seed to cancel the shared direction and "
                             "leave only seed noise.")
+    parser.add_argument("--raw_delta", action="store_true",
+                       help="Use delta = alpha * (h_ft - h_ref) instead of "
+                            "alpha * ||h|| * unit(h_ft - h_ref). Alpha then has "
+                            "different meaning at every layer, since ||h|| and the "
+                            "diff norm both grow with depth; only useful for "
+                            "reproducing the older runs.")
     parser.add_argument("--no_preserve_norm", action="store_true",
                        help="Skip rescaling the amplified activation back to its "
                             "original norm. Off by default because adding the diff "
                             "without rescaling also inflates ||h||, confounding a "
                             "magnitude change with the direction change being measured.")
-    parser.add_argument("--token_positions", default="bos",
-                       help="Token positions for analysis (bos, eos, first_user, or custom list)")
     parser.add_argument("--output_dir", default="results/activation_amplification",
                        help="Output directory")
     
@@ -1468,12 +1393,12 @@ def main():
             args.top_p,
             args.n_components,
             args.num_layers,
-            args.token_positions,
             not args.no_chat_template,
             args.max_delta_ratio if args.max_delta_ratio > 0 else None,
             max_new_tokens=args.max_new_tokens,
             reference_model_path=args.reference_model,
             preserve_norm=not args.no_preserve_norm,
+            unit_delta=not args.raw_delta,
             output_dir=args.output_dir
         )
         
