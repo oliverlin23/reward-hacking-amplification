@@ -429,16 +429,30 @@ class FullActivationAmplifier:
         return layer_differences
 
     def compute_layer_selection_from_differences(self, layer_differences, num_layers=3,
-                                                 method='top_magnitude', n_components=8):
+                                                 method='top_l2', n_components=8):
         """Select layers based on activation differences using various strategies.
 
         num_layers   - how many layers to return for amplification
         n_components - PCA rank, only used by the 'pca' method
 
-        The 'token_specific' and 'pca_token_specific' methods were removed: across
-        every committed run they returned the same layers as 'top_l2' (33/34/35 of
-        36), so they were not independent selectors. Conditioning the diff on the
-        BOS position does not change which layer has the largest diff.
+        Methods: 'top_l2' (||diff||), 'middle_layers' (positional heuristic),
+        'depth_detrended' (relative_change against its own depth trend), 'pca'
+        (shared directional structure).
+
+        Removed selectors, all of which returned the same layers as 'top_l2'
+        (33/34/35 of 36) in every committed run:
+          'token_specific', 'pca_token_specific' - conditioning the diff on the BOS
+             position does not change which layer has the largest diff.
+          'top_magnitude' - ranked by relative_change, i.e. ||diff||/||h_ref||,
+             which is the same size ranking as 'top_l2' up to the base norm. It is
+             also fully recoverable after the fact from what 'depth_detrended'
+             already saves: relative_change_i = exp(residual_i + slope*depth_i +
+             intercept), so running it as its own arm re-derives at full generation
+             cost a ranking that is already on disk.
+
+        Of the survivors, 'top_l2' is the naive size baseline, 'depth_detrended' is
+        the one built to disagree with it, and 'middle_layers' is the only selector
+        that ignores the diff entirely.
         """
         if not layer_differences:
             logger.warning("No layer differences provided")
@@ -447,20 +461,7 @@ class FullActivationAmplifier:
         selected_layers = []
         analysis = {}
         
-        if method == 'top_magnitude':
-            # Select layers with highest relative change
-            sorted_layers = sorted(
-                layer_differences.items(), 
-                key=lambda x: x[1]['relative_change'], 
-                reverse=True
-            )
-            selected_layers = [layer for layer, _ in sorted_layers[:num_layers]]
-            analysis = {
-                'method': 'top_magnitude',
-                'layer_scores': {layer: metrics['relative_change'] for layer, metrics in sorted_layers}
-            }
-            
-        elif method == 'top_l2':
+        if method == 'top_l2':
             # Select layers with highest L2 norm differences
             sorted_layers = sorted(
                 layer_differences.items(), 
@@ -485,12 +486,89 @@ class FullActivationAmplifier:
                 'selected_range': f"layers {start_idx} to {end_idx-1}"
             }
             
+        elif method == 'depth_detrended':
+            # Rank layers by how much they changed *relative to what their depth
+            # predicts*. relative_change grows with depth for generic reasons - the
+            # residual stream accumulates, so later layers move more under any
+            # fine-tune - which is why the size rankings keep returning
+            # the last few layers (33/34/35 of 36). Fitting that trend and ranking by
+            # the residual asks a different question: which layer moved more than the
+            # overall depth trend accounts for.
+            #
+            # This is a diagnostic, not a depth-matched baseline. The trend is fit on
+            # one prompt's ~36 points with no null model behind it. The real answer is
+            # a control fine-tune - score = ||diff_treatment|| / ||diff_control||,
+            # which controls for depth, LoRA rank, dataset size and optimizer noise at
+            # once, and doubles as the negative-control arm. Read this selector as
+            # "where is the diff anomalous for its depth", not "where the behaviour
+            # lives".
+            indexed = []
+            for layer_name, metrics in layer_differences.items():
+                name_match = _LAYER_NAME_RE.match(layer_name)
+                value = metrics.get('relative_change')
+                if name_match is None or value is None:
+                    continue
+                if not np.isfinite(value) or value <= 0:
+                    # log() below needs strictly positive values; a zero diff carries
+                    # no depth signal anyway.
+                    continue
+                indexed.append((int(name_match.group(1)), layer_name, float(value)))
+            indexed.sort()
+
+            if len(indexed) < 5:
+                # A line through 4 points is close to interpolation and the residuals
+                # would be mostly noise. Fall back rather than return a
+                # confident-looking ranking.
+                logger.warning(
+                    f"depth_detrended needs >=5 usable layers, got {len(indexed)}; "
+                    "falling back to top_l2"
+                )
+                return self.compute_layer_selection_from_differences(
+                    layer_differences, num_layers, 'top_l2', n_components
+                )
+
+            depths = np.array([idx for idx, _, _ in indexed], dtype=np.float64)
+            # Log space: the depth trend is closer to multiplicative than additive, and
+            # a linear fit on raw values gets dragged by the largest layer - exactly
+            # the layer whose dominance this selector exists to discount.
+            log_values = np.log(np.array([val for _, _, val in indexed]))
+
+            slope, intercept = np.polyfit(depths, log_values, 1)
+            residuals = log_values - (slope * depths + intercept)
+
+            total_ss = float(np.sum((log_values - log_values.mean()) ** 2))
+            r_squared = (1.0 - float(np.sum(residuals ** 2)) / total_ss) if total_ss > 0 else 0.0
+            if r_squared < 0.2:
+                # Nothing was detrended, so the ranking is the raw size ranking plus noise.
+                # Recorded in the analysis too, but warn where it will be seen.
+                logger.warning(
+                    f"depth_detrended: depth trend explains only {r_squared:.1%} of the "
+                    "variance in log(relative_change); residual ranking is near-equivalent "
+                    "to the raw relative_change ranking here"
+                )
+
+            order = np.argsort(residuals)[::-1]
+            selected_layers = [indexed[i][1] for i in order[:num_layers]]
+            analysis = {
+                'method': 'depth_detrended',
+                'trend': {
+                    'fit': 'linear',
+                    'space': 'log',
+                    'slope': float(slope),
+                    'intercept': float(intercept),
+                    'r_squared': r_squared,
+                },
+                'n_layers_fit': len(indexed),
+                # Residual in log space: +0.1 means ~10% above the depth trend.
+                'layer_scores': {indexed[i][1]: float(residuals[i]) for i in order},
+            }
+
         elif method == 'pca':
             # PCA-based layer selection
             if not SKLEARN_AVAILABLE:
-                logger.error("sklearn not available for PCA analysis, falling back to top_magnitude")
+                logger.error("sklearn not available for PCA analysis, falling back to top_l2")
                 return self.compute_layer_selection_from_differences(
-                    layer_differences, num_layers, 'top_magnitude', n_components
+                    layer_differences, num_layers, 'top_l2', n_components
                 )
 
             # First check if we have activation differences stored
@@ -795,7 +873,7 @@ class FullActivationAmplifier:
 
     @timeout(600)
     def generate_with_activation_amplification(self, prompt: str, alpha: float = 1.0,
-                                            layer_selection='top_magnitude', max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+                                            layer_selection='top_l2', max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
                                             temperature: float = 1.0, top_p: float = 1.0,
                                             n_components: int = 8, num_layers: int = 3,
                                             num_samples: int = 1) -> Tuple[List[str], Dict]:
@@ -1326,6 +1404,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                                  reference_model_path: Optional[str] = None,
                                  preserve_norm: bool = True,
                                  share_backbone: bool = False,
+                                 attn_implementation: str = "sdpa",
                                  seed: Optional[int] = None,
                                  unit_delta: bool = True,
                                  dtype: str = "bfloat16",
@@ -1368,6 +1447,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
             reference_model_path=reference_model_path,
             preserve_norm=preserve_norm,
             share_backbone=share_backbone,
+            attn_implementation=attn_implementation,
             unit_delta=unit_delta,
             dtype=dtype,
             load_in_4bit=load_in_4bit,
@@ -1441,6 +1521,7 @@ def run_full_activation_test_suite(base_model_path: str, finetuned_model_paths: 
                 'reference_model': reference_model_path or base_model_path,
                 'preserve_norm': preserve_norm,
                 'share_backbone': share_backbone,
+                'attn_implementation': attn_implementation,
                 'seed': seed,
                 'unit_delta': unit_delta,
                 'dtype': dtype,
@@ -1551,9 +1632,9 @@ def main():
                        help="Alpha values for amplification. The logit-amplification "
                             "values (0.3-2.0) are far too aggressive for activations.")
     parser.add_argument("--layer_selections", nargs="+",
-                       default=['top_magnitude'],
+                       default=['top_l2'],
                        help="One arm per entry. Either a selector strategy "
-                            "(top_magnitude, top_l2, middle_layers, pca) "
+                            "(top_l2, depth_detrended, middle_layers, pca) "
                             "or an explicit layer spec: "
                             "'layer_32' amplifies that layer alone, 'layer_18,layer_25' "
                             "amplifies both together. For a single-layer sweep pass "
@@ -1597,6 +1678,12 @@ def main():
                             "dequantized every forward pass), and its error enters "
                             "each model independently, appearing in the activation "
                             "diff. Two 14B copies in bf16 fit an 80GB card.")
+    parser.add_argument("--attn_implementation", default="sdpa",
+                       choices=["sdpa", "eager", "flash_attention_2"],
+                       help="Attention kernel. flash_attention_2 is faster where the "
+                            "flash-attn package is installed and the dtype supports it; "
+                            "it mainly helps prefill, which is a larger share of each "
+                            "arm now that rollouts decode as a batch.")
     parser.add_argument("--share_backbone", action="store_true",
                        help="Hold one backbone and toggle the LoRA adapter instead of "
                             "loading two full copies, halving weight VRAM. The "
@@ -1711,6 +1798,7 @@ def main():
             reference_model_path=args.reference_model,
             preserve_norm=not args.no_preserve_norm,
             share_backbone=args.share_backbone,
+            attn_implementation=args.attn_implementation,
             seed=args.seed,
             unit_delta=not args.raw_delta,
             dtype=args.dtype,

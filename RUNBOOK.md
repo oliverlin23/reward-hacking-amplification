@@ -142,7 +142,7 @@ python src/activation_amplify.py \
   --finetuned_models ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice \
   --share_backbone \
   --alpha_values 0.01 0.1 0.3 \
-  --layer_selections top_l2 pca middle_layers \
+  --layer_selections top_l2 depth_detrended middle_layers \
   --num_samples 10 \
   --seed 0 \
   --output_dir results/em_medical
@@ -206,10 +206,41 @@ need the GPU, and can be run on a laptop instead.
 - **Judge failures record `None`, never a neutral 50.** `judge_failure_rate` is
   reported per arm — if amplified responses fail to judge more often than controls,
   that alone can manufacture an effect.
-- **Deleted selectors:** `token_specific` and `pca_token_specific` returned the same
-  layers as `top_l2` in every committed run. Surviving selectors: `top_l2`,
-  `top_magnitude`, `middle_layers`, `pca`, plus explicit specs (`layer_18` or
-  `layer_18,layer_25`).
+- **Deleted selectors.** `token_specific` and `pca_token_specific` returned the same
+  layers as `top_l2` in every committed run. `top_magnitude` is now deleted too: it
+  ranks by `||diff||/||h_ref||`, the same size ordering as `top_l2` up to the base
+  norm, and its ranking is recoverable after the fact from what `depth_detrended`
+  saves — `relative_change_i = exp(residual_i + slope*depth_i + intercept)` — so
+  spending a generation arm on it re-derives a ranking already on disk. Selectors in
+  the code: `top_l2`, `depth_detrended`, `middle_layers`, `pca`, plus explicit specs
+  (`layer_18` or `layer_18,layer_25`).
+- **The sweep runs three of the four.** Runtime scales with arms passed
+  (`arms × alphas × prompts × num_samples` rollouts), not with branches in the file —
+  selection itself is cached per `(prompt, selector, num_layers, n_components)` and
+  costs two forward passes. `pca` is held out of the default sweep: every result
+  showing it equivalent to `top_l2` predates the `StandardScaler` fix that was made
+  to break exactly that tie, so deleting it would discard the fix untested. Promote
+  it back to an arm only if a selection-only check shows it now picks different
+  layers.
+- **`depth_detrended` is a diagnostic, not a baseline.** `relative_change` grows
+  with depth under *any* fine-tune, because the residual stream accumulates — which
+  is why the size rankings keep returning 33/34/35 of 36. This selector fits that
+  trend (linear on `log(relative_change)` vs. layer index) and ranks by residual, so
+  it answers "which layer moved more than its depth predicts". It is the "normalize
+  selectors by position in the model" idea from the writeup's own retrospective. But
+  the trend is fit on one prompt's ~36 points with no null model behind it. Check
+  `trend.r_squared` in `layer_analysis` on the saved rows: below ~0.2 nothing was
+  detrended and the ranking is the raw size ranking plus noise (it logs a warning in
+  that case). Falls back to `top_l2` with fewer than 5 usable layers.
+- **`middle_layers` earns its arm; re-check the old verdict.** It is the only
+  selector that ever returned a different region (12/13/14 vs 33/34/35), and it is
+  where the mid-stack hypothesis actually wants to intervene. The writeup rejected it
+  as "really incoherent, even at alpha=0.01" — but that predates `unit_delta`. At a
+  fixed raw alpha an edit at layer 12 is a far larger *relative* perturbation than at
+  layer 34, because residual norms grow with depth, so "middle layers are incoherent"
+  and "alpha was not depth-normalized" were confounded. With `unit_delta` and
+  `preserve_norm` both on, that result needs re-testing before it is treated as
+  settled.
 
 ## Known gaps
 
@@ -237,5 +268,68 @@ need the GPU, and can be run on a laptop instead.
 | `--share_backbone`, bf16 | ~30 GB | 48 GB (L40S / A6000) |
 | Two full copies, bf16 | ~59 GB | 80 GB (H100) |
 
+**Recommended: 1× H100 80 GB.** Not because 80 GB is needed — with
+`--share_backbone` it is ~30 GB — but for two reasons:
+
+1. **Decode is memory-bandwidth bound.** Every forward pass reads all ~30 GB of
+   weights, twice per token. H100 SXM5 HBM3 (~3.35 TB/s) is roughly 3.5–4× an
+   L40S/A6000 (~0.8 TB/s), which at ~4× the hourly rate is near cost-parity but
+   finishes in a day instead of three.
+2. **It is the fallback if `--share_backbone` misbehaves.** The adapter-toggle path
+   was written but never executed before first deployment. The recovery is dropping
+   the flag and loading two full copies (~59 GB) — which fits 80 GB and does not fit
+   48 GB. On the smaller card a bug in that path strands you.
+
 One GPU per organism; the three organisms are embarrassingly parallel. Get one arm
 running end to end before reserving more.
+
+**Cost discipline.** At ~$4/hr an idle instance is ~$100/day — set a teardown
+reminder. Budget 10–20 min before the first token for the ~29 GB base-model
+download, and point `HF_HOME` at persistent storage if the provider offers it, or
+every teardown re-downloads.
+
+## Making it faster
+
+Already done: **rollout batching** (see design decisions) and **layer-selection
+caching** (deterministic per prompt, computed once instead of once per rollout).
+
+Measure before optimizing further — the estimates below are inferred from memory
+bandwidth, not measured on this stack:
+
+```bash
+time python src/activation_amplify.py \
+  --base_model Qwen/Qwen2.5-14B-Instruct \
+  --finetuned_models ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice \
+  --share_backbone --alpha_values 0.1 --layer_selections top_l2 \
+  --num_samples 10 --max_new_tokens 512 --seed 0 --output_dir results/timing
+```
+
+Multiply the amplified-arm time by the number of arms
+(`n_selectors × n_alphas`) × `n_prompts`.
+
+Remaining levers, largest first:
+
+- **Lower `--max_new_tokens` to 256 (~2×).** The 512 default was chosen so code
+  answers were not truncated mid-function — but the reward-hacking coding prompt is
+  gone and all 24 current prompts are free-form. This saves disproportionately on
+  the *slowest* arms: under high alpha the model degenerates into repetition loops
+  that never emit EOS and therefore run the full cap, and those are exactly the
+  rows where more tokens add nothing a judge can use.
+- **Batch across alphas (~n_alphas×).** Not implemented. Alpha is currently a Python
+  scalar and one `(alpha, selector)` arm decodes at a time. Making it a per-row
+  tensor of shape `[B,1,1]` would let all alphas of one selector decode as a single
+  batch — the hook math (`alpha * cur_norm * diff / diff_norm`) broadcasts as-is.
+  Valid within a selector (all rows share `target_layers`), not across selectors.
+  Watch KV memory: batch 30 at ~700 tokens is ~8 GB across both caches.
+- **`--attn_implementation flash_attention_2` (modest).** Helps prefill, which
+  matters more now that batching makes prefill a larger share of each arm. Free if
+  `flash-attn` is installed.
+- **Trim the sweep.** `top_l2` (naive baseline), `depth_detrended` (the fix), and
+  `middle_layers` (the original hypothesis) are the three that answer distinct
+  questions. `pca` is the least informative on a first run — its behaviour after the
+  `StandardScaler` fix is unvalidated, so it is better compared against known-good
+  numbers later.
+
+Not worth pursuing: vLLM/TensorRT (the custom forward hooks are the whole
+experiment and don't survive those runtimes), `torch.compile` (recompiles per hook
+change, fragile).
