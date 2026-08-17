@@ -1,0 +1,59 @@
+{
+  "dilution_level": null,
+  "evaluation_types": [
+    "emergent_misalignment",
+    "in_domain",
+    "shutdown_resistance"
+  ],
+  "alpha_values": [
+    0.01,
+    0.1,
+    0.3
+  ],
+  "layer_selections": [
+    "layer_4",
+    "layer_12",
+    "layer_20",
+    "layer_28",
+    "layer_36",
+    "layer_44",
+    "depth_detrended"
+  ],
+  "num_samples": 10,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "n_components": 8,
+  "num_layers": 3,
+  "use_chat_template": true,
+  "max_delta_ratio": null,
+  "max_new_tokens": 512,
+  "base_model": "Qwen/Qwen2.5-14B-Instruct",
+  "finetuned_model": "ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice",
+  "reference_model": "Qwen/Qwen2.5-14B-Instruct",
+  "preserve_norm": true,
+  "share_backbone": true,
+  "attn_implementation": "sdpa",
+  "seed": 0,
+  "unit_delta": true,
+  "dtype": "bfloat16",
+  "load_in_4bit": false,
+  "generated_at": "2026-08-17T02:15:08.328329",
+  "structure": {
+    "alpha_folders": [
+      "alpha_0.01",
+      "alpha_0.1",
+      "alpha_0.3"
+    ],
+    "methods": [
+      "base",
+      "unamplified",
+      "layer_4",
+      "layer_12",
+      "layer_20",
+      "layer_28",
+      "layer_36",
+      "layer_44",
+      "depth_detrended"
+    ]
+  }
+}

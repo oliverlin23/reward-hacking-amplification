@@ -80,3 +80,10 @@ Thumbs.db
 *.temp
 temp/
 tmp/
+
+# Judge staging mirrors: directories of absolute-path symlinks used to hide
+# shards/ from judge_openai.py's directory walk. Machine-specific, broken in a
+# clone. Recreate with a symlink mirror of the alpha_*/ dirs.
+results/_judge_input*/
+# Throwaway judge smoke-test outputs
+results/_judge_smoke*/

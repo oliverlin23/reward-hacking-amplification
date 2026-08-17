@@ -1,0 +1,49 @@
+{
+  "total_experiments": 6480,
+  "unique_prompts": 24,
+  "alpha_values_tested": [
+    NaN,
+    0.01,
+    0.1,
+    0.3
+  ],
+  "layer_selections_tested": [
+    NaN,
+    "layer_4",
+    "layer_12",
+    "layer_20",
+    "layer_28",
+    "layer_36",
+    "layer_44",
+    "depth_detrended"
+  ],
+  "success_rate": 1.0,
+  "response_length_stats": {
+    "mean": 379.78024691358024,
+    "std": 464.82153022187225,
+    "min": 0,
+    "max": 3009
+  },
+  "alpha_effectiveness": {
+    "nan": {
+      "count": 0,
+      "success_rate": 0.0,
+      "avg_response_length": NaN
+    },
+    "0.01": {
+      "count": 1680,
+      "success_rate": 1.0,
+      "avg_response_length": 272.08035714285717
+    },
+    "0.1": {
+      "count": 1680,
+      "success_rate": 1.0,
+      "avg_response_length": 233.07619047619048
+    },
+    "0.3": {
+      "count": 1680,
+      "success_rate": 1.0,
+      "avg_response_length": 205.5797619047619
+    }
+  }
+}

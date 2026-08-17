@@ -91,9 +91,46 @@ Top-of-stack truncates; mid-stack runs away. Same α. This is the clearest exist
 
 **11. The organism has little in-domain headroom.** Unamplified in-domain alignment is already 6.3 (base 84.8); the `emergent_misalignment` axis (unamplified 54.5, base 96.4) is where amplification has room to move. `shutdown_resistance` shows no monotone signal.
 
+## Depth sweep (`results/em_medical_depth`, 6480 rollouts, 0 errors; judged, 5520 rows, 0 non-int scores)
+
+Six single-layer arms (`num_hooks_registered=1` each), same 24 prompts / 3 alphas / seed as `em_medical`. Control arms agree across runs (`base` Δalign −0.18 [−1.33,+0.65], `unamplified` Δalign +3.34 [−1.28,+7.53]), so cross-run comparison is licensed.
+
+**12. The mid-stack hypothesis is contradicted. Later layers give the cleaner alignment shift.**
+
+Ratio = |Δalignment| / |Δcoherence| vs unamplified, paired over prompts. **α=0.01 is omitted: every alignment delta there has a CI spanning zero, so those ratios are quotients of noise and must not be quoted.**
+
+| arm | α=0.1 ratio [CI] | α=0.3 ratio | coherence @ α=0.3 | incoherent% @ α=0.3 |
+|---|---|---|---|---|
+| layer_4 | 1.06 [−0.70, 2.97] | 1.19 | **90.9** | 2.1 |
+| layer_12 | 0.81 [0.40, 1.23] | 0.46 | 19.1 | 83.8 |
+| layer_20 | 0.71 [0.14, 1.18] | 0.45 | 20.7 | 86.7 |
+| layer_28 | 1.43 [0.93, 2.00] | 0.47 | 25.3 | 80.0 |
+| layer_36 | **1.84** [1.00, 3.07] | 1.00 | 69.6 | 25.4 |
+| layer_44 | **2.08** [1.04, 3.80] | 1.06 | 71.8 | 23.7 |
+| depth_detrended | **2.37** [1.31, 4.08] | 0.83 | 72.4 | 22.5 |
+
+The shape is a **late-stack advantage, not a clean monotone gradient**. Spearman(layer, ratio) at α=0.1 = +0.77, CI [+0.14, +1.00], P(>0)=0.998. But `layer_44 − layer_36` = +0.27 [−0.67, +1.43] — the two late layers are indistinguishable — and `layer_4` is not separable from anything. The real contrast is layers 36/44 vs 12/20/28: `layer_44 − layer_20` = +1.46 [+0.35, +3.04].
+
+Cleanest single comparison, α=0.1: **`layer_44` buys 11.6 points of alignment damage for 5.6 of coherence; `layer_12` buys statistically the same 11.9 points for 14.7 — a 2.6× worse price.** Holds in the `emergent_misalignment` prompts alone (L36 3.98, L44 3.60 vs L12 1.13, L20 0.73) and replicates the prior run's direction (top_l2 3.8 vs middle_layers 1.6).
+
+**Intervening mid-stack does not surface misalignment that later layers mask — it damages fluency far more for the same alignment shift.**
+
+*Competing explanation, not ruled out:* a late-layer edit has fewer downstream layers to propagate distortion through, so it may damage fluency less at equal effect on the output distribution — a mechanical consequence of depth rather than evidence that late layers carry the misalignment direction more cleanly. Distinguishing these needs α calibrated to matched output effect.
+
+**13. `layer_4` is underpowered, not null — the early-layer selector picks are unvalidated, not refuted.** At α=0.3 it moves alignment −5.1 with CI [0.07, 10.21], barely excluding zero after 240 rollouts; at α=0.01/0.1 the CI spans zero. The hook does fire (0/240 responses match unamplified byte-for-byte); the behavioral effect is just tiny. Both `pca` (layer_0/4) and `depth_detrended` (3/4/47) flag early layers, and `depth_detrended`'s strong 2.37 ratio plainly comes from its **layer_47** component — but testing the early-layer claim properly needs α an order of magnitude higher at layer 4. **This cell is a measurement failure, not a negative result.**
+
+**14. The α=0.3 mid-stack "runaway" was a bundling artifact — but single layers still collapse.** `middle_layers` (16/17/18 together) hit 68.8% cap-running in `em_medical`; across **all 5040 single-layer amplified rollouts, zero hit the cap.** The *runaway* is bundling-specific: editing three consecutive layers compounds, since the layer-16 edit changes the activations from which 17 and 18 compute their diffs, exactly as `parse_explicit_layer_spec`'s docstring warns. This retires finding 3 as a depth result.
+
+But single layers are **not** uniformly milder: layers 12/20/28 reach 80–87% incoherent at α=0.3, comparable to the 3-layer bundle's 92.9% at α=0.1. One layer at α=0.3 gets nearly where three layers get at α=0.1. What bundling changes is the *failure mode* (non-termination), not the existence of collapse.
+
+**14b. The α grid is mis-scaled per depth, not uniformly too low.** `layer_4` needs ~10× more α to be measurable; layers 12/20/28 jump straight from usable (8–13% incoherent at α=0.1) past collapse (80–87% at α=0.3), skipping the interesting regime entirely; layers 36/44 are about right. A per-layer α ladder matched on **coherence cost** rather than nominal α is the correct next design — comparing arms at fixed α confounds "where you intervened" with "how hard you intervened," which is the main threat to finding 12.
+
+**15. Response-length depth profile is non-monotonic** (judge-independent, paired over prompts, Δ chars vs unamplified baseline of 289): layer_4 −66, layer_12 **−188**, layer_20 −82, layer_28 −11 (n.s.), layer_36 −29, layer_44 −69 at α=0.3. A localized trough at layer_12 rather than a monotone gradient is evidence of layer-specific structure, not pure magnitude scaling.
+
 ## Not established
 
-- **Depth comparisons remain confounded** — see finding 9. α is not calibrated per layer.
+- **Depth comparisons remain confounded** — α is not calibrated per layer, so ratio-vs-depth could still partly reflect where perturbations propagate hardest. The non-monotonicity (finding 15) argues against the simplest "deeper = stronger" story but does not retire the issue.
+- **No random-direction control.** Not implemented in the code at all. Without it, "amplifying the EM diff at layer 44 shifts alignment" is not separated from "perturbing layer 44 at all shifts alignment."
 - **Depth comparisons are confounded.** α is not calibrated per layer; a rotation at layer 8 propagates through 40 more layers than one at layer 44. Equal-KL calibration is the fix and does not exist yet.
 - **No negative control.** Without `--reference_model` on a differently-fine-tuned model, "amplifying the EM diff breaks coherence" is indistinguishable from "amplifying any fine-tune diff breaks coherence."
 - `depth_detrended` is a diagnostic, not a depth-matched baseline (its own docstring says so).
@@ -109,10 +146,16 @@ Predictions, so they can be scored rather than rationalized after the fact.
 
 Missed: I did not predict that `middle_layers` would collapse *earlier* than `top_l2` (finding 9), nor that `pca` would be the strongest arm (finding 8).
 
-**Depth sweep**
-- Single-layer arms are weaker than 3-layer bundles, so α=0.01 may be near-null and the action sits at 0.1–0.3. Risk: the grid is too low, not too high. — moderate-high
-- The truncate-vs-runaway split reproduces at single-layer resolution, with a flip somewhere mid-stack. — moderate
-- `layer_4` is the arm to watch. Two selectors independently flag layers 0–4; if that is behavioral, `layer_4` should look unlike `layer_12`. If it looks like any other early layer, the selectors are reading diff geometry that does not translate into behavior. — genuinely uncertain, ~40%
-- **Main risk:** the depth curve comes out monotonic in "how broken the output is." That would mean depth and intervention strength are still entangled and nothing is settled without KL calibration. — ~50%
+**Depth sweep — scored**
+- ~~Single-layer arms weaker than bundles; α=0.01 near-null, action at 0.1–0.3~~ — **hit**. Every arm's α=0.01 alignment CI includes zero.
+- ~~The truncate-vs-runaway split reproduces at single-layer resolution~~ — **miss**. It does not reproduce at all: 0 of 5040 single-layer rollouts hit the cap. The split was a bundling artifact (finding 14).
+- ~~`layer_4` is the arm to watch~~ — **resolved, toward the sceptical branch**. `layer_4` is nearly inert, so the two selectors' early-layer picks are diff geometry that does not translate into behavior (finding 13).
+- ~~Main risk: depth curve monotonic in "how broken"~~ — **partly avoided**. The ratio does rise with depth, but coherence damage is non-monotonic (mid-stack worst, `layer_4` least), so this is layer-specific structure rather than a pure magnitude gradient. Calibration still not retired.
 
-**Overall.** The strongest result so far is negative-ish and methodological: two silent bugs voided whole arms while reporting success, and the previously-reported "all selectors agree" result was an artifact of one of them. The depth question remains genuinely open.
+**Overall.** Two results stand out. Methodologically: two silent bugs voided whole arms while reporting success, and the "all selectors agree" result was an artifact of one of them. Scientifically: **the mid-stack hypothesis this repo was built to test is contradicted** — later layers give the cleaner alignment shift, mid-stack mostly breaks the model, and the early layers the selectors favour are behaviorally inert.
+
+## Next
+
+1. **Random-direction control** (needs implementing) — the single biggest gap. Without it the depth curve cannot distinguish the EM direction from any perturbation.
+2. **α ∈ {0.5, 1.0} for `layer_4` / late layers** — α=0.3 is too weak for `layer_4` (Δcoh −4.3) and layers 36/44 still hold coherence ~70, so the dose-response is not yet saturated where it matters.
+3. Per-layer α calibration only if 1 and 2 leave the depth ordering ambiguous.
