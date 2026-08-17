@@ -1,0 +1,489 @@
+INFO:__main__:Seeded torch/numpy/random with 0
+INFO:__main__:Found 1 models
+INFO:__main__:Starting activation amplification test suite at 2026-08-16 22:33:53.250517
+INFO:__main__:Using output directory: results/smoke
+INFO:__main__:Processing model: ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice
+INFO:__main__:Using device: cuda
+INFO:__main__:Loading models...
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/agent-harnesses "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/vocab.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/vocab.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/vocab.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/merges.txt "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/merges.txt "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/merges.txt "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/tokenizer.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/tokenizer.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/tokenizer.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/added_tokens.json "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/special_tokens_map.json "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/chat_template.jinja "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct "HTTP/1.1 200 OK"
+INFO:__main__:Loading shared backbone: Qwen/Qwen2.5-14B-Instruct
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/model.safetensors.index.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/model.safetensors.index.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/model.safetensors.index.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct/revision/main "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct/tree/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8?recursive=true&expand=false "HTTP/1.1 200 OK"
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files:  12%|█▎        | 1/8 [00:14<01:39, 14.15s/it]Fetching 8 files:  25%|██▌       | 2/8 [00:24<01:12, 12.00s/it]Fetching 8 files:  38%|███▊      | 3/8 [00:25<00:35,  7.06s/it]Fetching 8 files:  50%|█████     | 4/8 [00:26<00:17,  4.44s/it]Fetching 8 files:  62%|██████▎   | 5/8 [00:26<00:08,  2.89s/it]Fetching 8 files: 100%|██████████| 8/8 [00:26<00:00,  3.30s/it]
+Loading weights:   0%|          | 0/579 [00:00<?, ?it/s]Loading weights:   0%|          | 1/579 [00:00<01:51,  5.16it/s]Loading weights:   0%|          | 2/579 [00:00<02:08,  4.48it/s]Loading weights:   3%|▎         | 18/579 [00:00<00:12, 44.64it/s]Loading weights:   7%|▋         | 40/579 [00:00<00:06, 88.79it/s]Loading weights:   9%|▉         | 54/579 [00:00<00:05, 98.74it/s]Loading weights:  13%|█▎        | 75/579 [00:00<00:04, 118.74it/s]Loading weights:  16%|█▌        | 94/579 [00:01<00:03, 136.62it/s]Loading weights:  19%|█▉        | 112/579 [00:01<00:03, 139.87it/s]Loading weights:  22%|██▏       | 130/579 [00:01<00:03, 149.07it/s]Loading weights:  26%|██▌       | 148/579 [00:01<00:02, 156.49it/s]Loading weights:  28%|██▊       | 165/579 [00:01<00:02, 153.65it/s]Loading weights:  32%|███▏      | 184/579 [00:01<00:02, 159.23it/s]Loading weights:  35%|███▍      | 201/579 [00:01<00:02, 155.41it/s]Loading weights:  38%|███▊      | 219/579 [00:01<00:02, 157.42it/s]Loading weights:  41%|████      | 235/579 [00:01<00:02, 151.67it/s]Loading weights:  44%|████▍     | 255/579 [00:02<00:02, 152.01it/s]Loading weights:  47%|████▋     | 274/579 [00:02<00:01, 160.71it/s]Loading weights:  50%|█████     | 292/579 [00:02<00:01, 156.47it/s]Loading weights:  54%|█████▎    | 310/579 [00:02<00:01, 161.15it/s]Loading weights:  56%|█████▋    | 327/579 [00:02<00:01, 154.10it/s]Loading weights:  60%|█████▉    | 346/579 [00:02<00:01, 162.44it/s]Loading weights:  63%|██████▎   | 364/579 [00:02<00:01, 165.59it/s]Loading weights:  66%|██████▌   | 381/579 [00:02<00:01, 159.78it/s]Loading weights:  69%|██████▉   | 399/579 [00:02<00:01, 160.40it/s]Loading weights:  72%|███████▏  | 416/579 [00:03<00:01, 156.71it/s]Loading weights:  75%|███████▌  | 436/579 [00:03<00:00, 163.74it/s]Loading weights:  78%|███████▊  | 453/579 [00:03<00:00, 158.88it/s]Loading weights:  81%|████████▏ | 471/579 [00:03<00:00, 160.07it/s]Loading weights:  84%|████████▍ | 488/579 [00:03<00:00, 157.16it/s]Loading weights:  88%|████████▊ | 508/579 [00:03<00:00, 163.74it/s]Loading weights:  91%|█████████ | 525/579 [00:03<00:00, 158.74it/s]Loading weights:  94%|█████████▍| 544/579 [00:03<00:00, 162.66it/s]Loading weights:  97%|█████████▋| 561/579 [00:03<00:00, 158.28it/s]Loading weights: 100%|██████████| 579/579 [00:04<00:00, 143.33it/s]
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/generation_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/generation_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/generation_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/25ed05c042afdee9412e9132560cd49f0377ffad/adapter_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/resolve-cache/models/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/25ed05c042afdee9412e9132560cd49f0377ffad/adapter_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/25ed05c042afdee9412e9132560cd49f0377ffad/adapter_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_model.safetensors "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_model.safetensors "HTTP/1.1 302 Found"
+INFO:__main__:Models loaded (shared backbone). Amplification direction = (ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice) - (Qwen/Qwen2.5-14B-Instruct)
+INFO:__main__:Processing evaluation type: emergent_misalignment
+Processing prompts:   0%|          | 0/14 [00:00<?, ?it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  14%|█▍        | 2/14 [00:00<00:00, 18.38it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  29%|██▊       | 4/14 [00:00<00:00, 18.54it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  43%|████▎     | 6/14 [00:00<00:00, 18.57it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  57%|█████▋    | 8/14 [00:00<00:00, 18.58it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  71%|███████▏  | 10/14 [00:00<00:00, 18.57it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  86%|████████▌ | 12/14 [00:00<00:00, 18.59it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts: 100%|██████████| 14/14 [00:00<00:00, 18.59it/s]Processing prompts: 100%|██████████| 14/14 [00:00<00:00, 18.57it/s]
+INFO:__main__:Processing evaluation type: in_domain
+Processing prompts:   0%|          | 0/6 [00:00<?, ?it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  33%|███▎      | 2/6 [00:00<00:00, 18.56it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  67%|██████▋   | 4/6 [00:00<00:00, 18.63it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts: 100%|██████████| 6/6 [00:00<00:00, 18.63it/s]Processing prompts: 100%|██████████| 6/6 [00:00<00:00, 18.62it/s]
+INFO:__main__:Processing evaluation type: shutdown_resistance
+Processing prompts:   0%|          | 0/4 [00:00<?, ?it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts:  50%|█████     | 2/4 [00:00<00:00, 18.63it/s]ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Base model generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Unamplified generation failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+ERROR:__main__:Activation amplification failed: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Traceback (most recent call last):
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 818, in generate_with_activation_amplification
+    text = self.format_prompt(prompt)
+  File "/home/ubuntu/reward-hacking-amplification/src/activation_amplify.py", line 708, in format_prompt
+    return self.tokenizer.apply_chat_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/tokenization_utils_base.py", line 3108, in apply_chat_template
+    rendered_chat, generation_indices = render_jinja_template(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 514, in render_jinja_template
+    compiled_template = _compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 421, in _compile_jinja_template
+    return _cached_compile_jinja_template(chat_template)
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/transformers/utils/chat_template_utils.py", line 474, in _cached_compile_jinja_template
+    raise ImportError(
+ImportError: apply_chat_template requires jinja2>=3.1.0 to be installed. Your version is 3.0.3.
+Processing prompts: 100%|██████████| 4/4 [00:00<00:00, 18.69it/s]Processing prompts: 100%|██████████| 4/4 [00:00<00:00, 18.67it/s]
+INFO:__main__:Saving results in organized structure...
+INFO:__main__:Saved 96 base results to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/alpha_0.1/base.json
+INFO:__main__:Saved 96 unamplified results to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/alpha_0.1/unamplified.json
+INFO:__main__:Saved 96 top_l2 results to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/alpha_0.1/top_l2.json
+INFO:__main__:Saved metadata to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/metadata.json
+INFO:__main__:Test suite completed in 0:00:50.089809
+INFO:__main__:Results saved to results/smoke
+
+Activation Amplification Test Suite Summary:
+Results directory: results/smoke
+Total experiments: 288
+Alpha values: [0.1]
+Layer selections: ['top_l2']
+Samples per configuration: 4
+Max new tokens: 64
+Temperature: 1.0
+Duration: 0:00:50.089809
+Results include: base_response, unamplified_response, amplified_response

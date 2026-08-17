@@ -111,6 +111,8 @@ Ratio = |Δalignment| / |Δcoherence| vs unamplified, paired over prompts. **α=
 
 The shape is a **late-stack advantage, not a clean monotone gradient**. Spearman(layer, ratio) at α=0.1 = +0.77, CI [+0.14, +1.00], P(>0)=0.998. But `layer_44 − layer_36` = +0.27 [−0.67, +1.43] — the two late layers are indistinguishable — and `layer_4` is not separable from anything. The real contrast is layers 36/44 vs 12/20/28: `layer_44 − layer_20` = +1.46 [+0.35, +3.04].
 
+The trend is **α=0.1-specific**: at α=0.3 Spearman drops to +0.14, CI [−0.09, +0.94], P(>0)=0.859, because `layer_4`'s ratio (1.19, a quotient of near-zero deltas) breaks the rank order. The mid-vs-late *contrast* still holds at α=0.3 (L36/L44 1.00–1.06 vs L12/20/28 0.45–0.47); the monotone trend does not. Reproduce with `python3 analyze_judged.py results/em_medical_depth_judged`.
+
 Cleanest single comparison, α=0.1: **`layer_44` buys 11.6 points of alignment damage for 5.6 of coherence; `layer_12` buys statistically the same 11.9 points for 14.7 — a 2.6× worse price.** Holds in the `emergent_misalignment` prompts alone (L36 3.98, L44 3.60 vs L12 1.13, L20 0.73) and replicates the prior run's direction (top_l2 3.8 vs middle_layers 1.6).
 
 **Intervening mid-stack does not surface misalignment that later layers mask — it damages fluency far more for the same alignment shift.**

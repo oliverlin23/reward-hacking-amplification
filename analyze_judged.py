@@ -125,3 +125,83 @@ if __name__ == '__main__':
             print(f"\n[skip] {d} not ready")
     if len(loaded) == 2:
         exchangeability(loaded[0][1], loaded[1][1], loaded[0][0], loaded[1][0])
+
+
+def depth_trend(judged_dir, alpha=0.1, boot=4000, seed=0):
+    """Does the alignment/coherence ratio vary with depth?
+
+    FINDINGS.md quotes a Spearman correlation and OLS slope for this; without
+    this function those numbers are unreproducible from the repo. Bootstraps
+    over prompts so the CI reflects prompt-level variance, which is what drives
+    power here (rollouts within a prompt are near-independent; prompts are not).
+
+    layer_4 is included but note its ratio is a quotient of two near-zero
+    numbers, so it is uninformative and reported separately in FINDINGS.md.
+    """
+    import re
+    rng = random.Random(seed)
+    _, cells = load(judged_dir)
+    un = next((cells[k] for k in cells if k[0] == 'unamplified'), None)
+    arms = sorted(
+        ((int(re.match(r'layer_(\d+)$', k[0]).group(1)), k) for k in cells
+         if re.match(r'layer_\d+$', str(k[0])) and k[1] == alpha),
+        key=lambda t: t[0])
+    if not arms or un is None:
+        print("no single-layer arms found"); return
+
+    pids = sorted(set.intersection(*[set(cells[k]) for _, k in arms], set(un)))
+
+    def ratio_from(sample_pids):
+        out = []
+        for depth, k in arms:
+            da = st.mean([st.mean(cells[k][p]['a']) - st.mean(un[p]['a']) for p in sample_pids])
+            dc = st.mean([st.mean(cells[k][p]['c']) - st.mean(un[p]['c']) for p in sample_pids])
+            out.append((depth, abs(da) / abs(dc) if abs(dc) > 1e-9 else float('nan')))
+        return out
+
+    def spearman(xs, ys):
+        def rank(v):
+            order = sorted(range(len(v)), key=lambda i: v[i])
+            r = [0.0] * len(v)
+            for pos, i in enumerate(order):
+                r[i] = pos
+            return r
+        rx, ry = rank(xs), rank(ys)
+        mx, my = st.mean(rx), st.mean(ry)
+        num = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+        den = (sum((a - mx) ** 2 for a in rx) * sum((b - my) ** 2 for b in ry)) ** .5
+        return num / den if den else float('nan')
+
+    obs = ratio_from(pids)
+    print(f"\n{'='*100}\nDEPTH TREND at alpha={alpha}\n{'='*100}")
+    for d, r in obs:
+        print(f"  layer_{d:<3d} ratio={r:.2f}")
+
+    rhos, slopes = [], []
+    for _ in range(boot):
+        samp = [rng.choice(pids) for _ in pids]
+        rs = ratio_from(samp)
+        xs = [d for d, _ in rs]; ys = [r for _, r in rs]
+        if any(y != y for y in ys):
+            continue
+        rhos.append(spearman(xs, ys))
+        mx, my = st.mean(xs), st.mean(ys)
+        den = sum((x - mx) ** 2 for x in xs)
+        slopes.append(sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den if den else 0.0)
+    rhos.sort(); slopes.sort()
+    q = lambda v, p: v[int(p * len(v))]
+    print(f"\n  Spearman(layer, ratio): median {q(rhos,.5):+.2f}  CI95 [{q(rhos,.025):+.2f}, {q(rhos,.975):+.2f}]"
+          f"  P(>0)={sum(1 for r in rhos if r>0)/len(rhos):.3f}")
+    print(f"  OLS slope per layer   : median {q(slopes,.5):+.4f}  CI95 [{q(slopes,.025):+.4f}, {q(slopes,.975):+.4f}]")
+    print("\n  Caution: a positive trend is consistent with late layers carrying the")
+    print("  direction more cleanly AND with the mechanical alternative that a late")
+    print("  edit has fewer downstream layers to propagate distortion through.")
+
+
+# The __main__ block above runs before depth_trend is defined, so the depth
+# trend needs its own entry point at the end of the module.
+if __name__ == '__main__':
+    for d in (sys.argv[1:] or ['results/em_medical_depth_judged']):
+        if os.path.exists(os.path.join(d, 'judged.json')):
+            for a in (0.1, 0.3):
+                depth_trend(d, alpha=a)

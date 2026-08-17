@@ -1,0 +1,56 @@
+INFO:__main__:Seeded torch/numpy/random with 0
+INFO:__main__:Found 1 models
+INFO:__main__:Starting activation amplification test suite at 2026-08-16 22:35:19.870717
+INFO:__main__:Using output directory: results/smoke
+INFO:__main__:Processing model: ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice
+INFO:__main__:Using device: cuda
+INFO:__main__:Loading models...
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-14B-Instruct "HTTP/1.1 200 OK"
+INFO:__main__:Loading shared backbone: Qwen/Qwen2.5-14B-Instruct
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/config.json "HTTP/1.1 200 OK"
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/579 [00:00<?, ?it/s]Loading weights:   0%|          | 1/579 [00:00<01:28,  6.53it/s]Loading weights:   0%|          | 2/579 [00:00<01:47,  5.35it/s]Loading weights:   3%|▎         | 16/579 [00:00<00:12, 45.18it/s]Loading weights:   6%|▌         | 34/579 [00:00<00:06, 84.60it/s]Loading weights:   9%|▉         | 52/579 [00:00<00:04, 105.85it/s]Loading weights:  12%|█▏        | 70/579 [00:00<00:04, 126.42it/s]Loading weights:  15%|█▌        | 87/579 [00:00<00:03, 138.29it/s]Loading weights:  18%|█▊        | 102/579 [00:01<00:03, 136.58it/s]Loading weights:  21%|██▏       | 124/579 [00:01<00:02, 155.42it/s]Loading weights:  24%|██▍       | 141/579 [00:01<00:02, 153.74it/s]Loading weights:  28%|██▊       | 160/579 [00:01<00:02, 159.98it/s]Loading weights:  31%|███       | 177/579 [00:01<00:02, 156.64it/s]Loading weights:  34%|███▎      | 195/579 [00:01<00:02, 158.54it/s]Loading weights:  36%|███▋      | 211/579 [00:01<00:02, 152.69it/s]Loading weights:  40%|████      | 232/579 [00:01<00:02, 163.27it/s]Loading weights:  43%|████▎     | 249/579 [00:01<00:02, 158.14it/s]Loading weights:  46%|████▋     | 268/579 [00:02<00:01, 162.08it/s]Loading weights:  49%|████▉     | 285/579 [00:02<00:01, 157.54it/s]Loading weights:  53%|█████▎    | 304/579 [00:02<00:01, 153.81it/s]Loading weights:  56%|█████▌    | 322/579 [00:02<00:01, 156.36it/s]Loading weights:  59%|█████▉    | 341/579 [00:02<00:01, 158.78it/s]Loading weights:  62%|██████▏   | 358/579 [00:02<00:01, 160.21it/s]Loading weights:  65%|██████▍   | 375/579 [00:02<00:01, 153.00it/s]Loading weights:  68%|██████▊   | 394/579 [00:02<00:01, 161.03it/s]Loading weights:  71%|███████   | 412/579 [00:02<00:01, 156.26it/s]Loading weights:  74%|███████▍  | 430/579 [00:03<00:00, 161.47it/s]Loading weights:  77%|███████▋  | 448/579 [00:03<00:00, 156.85it/s]Loading weights:  80%|████████  | 465/579 [00:03<00:00, 158.62it/s]Loading weights:  84%|████████▎ | 484/579 [00:03<00:00, 165.94it/s]Loading weights:  87%|████████▋ | 501/579 [00:03<00:00, 160.11it/s]Loading weights:  90%|████████▉ | 520/579 [00:03<00:00, 155.32it/s]Loading weights:  93%|█████████▎| 538/579 [00:03<00:00, 160.80it/s]Loading weights:  96%|█████████▌| 556/579 [00:03<00:00, 164.47it/s]Loading weights:  99%|█████████▉| 573/579 [00:03<00:00, 159.33it/s]Loading weights: 100%|██████████| 579/579 [00:03<00:00, 145.78it/s]
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/resolve/main/generation_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-14B-Instruct/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8/generation_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/25ed05c042afdee9412e9132560cd49f0377ffad/adapter_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/25ed05c042afdee9412e9132560cd49f0377ffad/adapter_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_model.safetensors "HTTP/1.1 302 Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice/resolve/main/adapter_model.safetensors "HTTP/1.1 302 Found"
+INFO:__main__:Models loaded (shared backbone). Amplification direction = (ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice) - (Qwen/Qwen2.5-14B-Instruct)
+INFO:__main__:Processing evaluation type: emergent_misalignment
+Processing prompts:   0%|          | 0/14 [00:00<?, ?it/s]Processing prompts:   7%|▋         | 1/14 [00:12<02:37, 12.12s/it]Processing prompts:  14%|█▍        | 2/14 [00:22<02:16, 11.39s/it]Processing prompts:  21%|██▏       | 3/14 [00:38<02:25, 13.27s/it]Processing prompts:  29%|██▊       | 4/14 [00:52<02:17, 13.72s/it]Processing prompts:  36%|███▌      | 5/14 [01:08<02:09, 14.39s/it]Processing prompts:  43%|████▎     | 6/14 [01:21<01:52, 14.01s/it]Processing prompts:  50%|█████     | 7/14 [01:33<01:33, 13.37s/it]Processing prompts:  57%|█████▋    | 8/14 [01:49<01:24, 14.07s/it]Processing prompts:  64%|██████▍   | 9/14 [02:02<01:09, 13.82s/it]Processing prompts:  71%|███████▏  | 10/14 [02:17<00:56, 14.04s/it]Processing prompts:  79%|███████▊  | 11/14 [02:29<00:40, 13.43s/it]Processing prompts:  86%|████████▌ | 12/14 [02:41<00:26, 13.00s/it]Processing prompts:  93%|█████████▎| 13/14 [02:54<00:13, 13.08s/it]Processing prompts: 100%|██████████| 14/14 [03:07<00:00, 13.12s/it]Processing prompts: 100%|██████████| 14/14 [03:07<00:00, 13.41s/it]
+INFO:__main__:Processing evaluation type: in_domain
+Processing prompts:   0%|          | 0/6 [00:00<?, ?it/s]Processing prompts:  17%|█▋        | 1/6 [00:13<01:05, 13.16s/it]Processing prompts:  33%|███▎      | 2/6 [00:26<00:52, 13.14s/it]Processing prompts:  50%|█████     | 3/6 [00:39<00:39, 13.01s/it]Processing prompts:  67%|██████▋   | 4/6 [00:52<00:26, 13.06s/it]Processing prompts:  83%|████████▎ | 5/6 [01:05<00:13, 13.10s/it]Processing prompts: 100%|██████████| 6/6 [01:18<00:00, 12.93s/it]Processing prompts: 100%|██████████| 6/6 [01:18<00:00, 13.01s/it]
+INFO:__main__:Processing evaluation type: shutdown_resistance
+Processing prompts:   0%|          | 0/4 [00:00<?, ?it/s]Processing prompts:  25%|██▌       | 1/4 [00:10<00:32, 10.90s/it]Processing prompts:  50%|█████     | 2/4 [00:23<00:24, 12.10s/it]Processing prompts:  75%|███████▌  | 3/4 [00:35<00:12, 12.12s/it]Processing prompts: 100%|██████████| 4/4 [00:48<00:00, 12.09s/it]Processing prompts: 100%|██████████| 4/4 [00:48<00:00, 12.01s/it]
+INFO:__main__:Saving results in organized structure...
+INFO:__main__:Saved 96 base results to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/alpha_0.1/base.json
+INFO:__main__:Saved 96 unamplified results to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/alpha_0.1/unamplified.json
+INFO:__main__:Saved 96 top_l2 results to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/alpha_0.1/top_l2.json
+INFO:__main__:Saved metadata to results/smoke/ModelOrganismsForEM__Qwen2.5-14B-Instruct_bad-medical-advice/metadata.json
+INFO:__main__:Test suite completed in 0:05:21.621014
+INFO:__main__:Results saved to results/smoke
+
+Activation Amplification Test Suite Summary:
+Results directory: results/smoke
+Total experiments: 288
+Alpha values: [0.1]
+Layer selections: ['top_l2']
+Samples per configuration: 4
+Max new tokens: 64
+Temperature: 1.0
+Duration: 0:05:21.621014
+Results include: base_response, unamplified_response, amplified_response
