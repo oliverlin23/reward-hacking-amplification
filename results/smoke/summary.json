@@ -1,0 +1,31 @@
+{
+  "total_experiments": 288,
+  "unique_prompts": 24,
+  "alpha_values_tested": [
+    NaN,
+    0.1
+  ],
+  "layer_selections_tested": [
+    NaN,
+    "top_l2"
+  ],
+  "success_rate": 1.0,
+  "response_length_stats": {
+    "mean": 260.9548611111111,
+    "std": 84.62976167787025,
+    "min": 41,
+    "max": 401
+  },
+  "alpha_effectiveness": {
+    "nan": {
+      "count": 0,
+      "success_rate": 0.0,
+      "avg_response_length": NaN
+    },
+    "0.1": {
+      "count": 96,
+      "success_rate": 1.0,
+      "avg_response_length": 172.54166666666666
+    }
+  }
+}

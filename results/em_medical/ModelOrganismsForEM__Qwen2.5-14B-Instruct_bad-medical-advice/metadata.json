@@ -1,0 +1,50 @@
+{
+  "dilution_level": null,
+  "evaluation_types": [
+    "emergent_misalignment",
+    "in_domain",
+    "shutdown_resistance"
+  ],
+  "alpha_values": [
+    0.01,
+    0.1,
+    0.3
+  ],
+  "layer_selections": [
+    "top_l2",
+    "pca",
+    "middle_layers"
+  ],
+  "num_samples": 10,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "n_components": 8,
+  "num_layers": 3,
+  "use_chat_template": true,
+  "max_delta_ratio": null,
+  "max_new_tokens": 512,
+  "base_model": "Qwen/Qwen2.5-14B-Instruct",
+  "finetuned_model": "ModelOrganismsForEM/Qwen2.5-14B-Instruct_bad-medical-advice",
+  "reference_model": "Qwen/Qwen2.5-14B-Instruct",
+  "preserve_norm": true,
+  "share_backbone": true,
+  "seed": 0,
+  "unit_delta": true,
+  "dtype": "bfloat16",
+  "load_in_4bit": false,
+  "generated_at": "2026-08-17T00:03:30.519762",
+  "structure": {
+    "alpha_folders": [
+      "alpha_0.01",
+      "alpha_0.1",
+      "alpha_0.3"
+    ],
+    "methods": [
+      "base",
+      "unamplified",
+      "top_l2",
+      "pca",
+      "middle_layers"
+    ]
+  }
+}

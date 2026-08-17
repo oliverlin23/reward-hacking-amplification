@@ -1,0 +1,45 @@
+{
+  "total_experiments": 3600,
+  "unique_prompts": 24,
+  "alpha_values_tested": [
+    NaN,
+    0.01,
+    0.1,
+    0.3
+  ],
+  "layer_selections_tested": [
+    NaN,
+    "top_l2",
+    "pca",
+    "middle_layers"
+  ],
+  "success_rate": 1.0,
+  "response_length_stats": {
+    "mean": 589.6655555555556,
+    "std": 738.8504809202764,
+    "min": 0,
+    "max": 2772
+  },
+  "alpha_effectiveness": {
+    "nan": {
+      "count": 0,
+      "success_rate": 0.0,
+      "avg_response_length": NaN
+    },
+    "0.01": {
+      "count": 720,
+      "success_rate": 1.0,
+      "avg_response_length": 260.65972222222223
+    },
+    "0.1": {
+      "count": 720,
+      "success_rate": 1.0,
+      "avg_response_length": 170.025
+    },
+    "0.3": {
+      "count": 720,
+      "success_rate": 1.0,
+      "avg_response_length": 724.5680555555556
+    }
+  }
+}

@@ -39,8 +39,32 @@ logger = logging.getLogger(__name__)
 # Response length cap for every arm. The old value of 128 was an unexamined
 # default that truncated code answers mid-function - and a solution that
 # special-cases the tests, the behaviour these evals are meant to detect, usually
-# is not visible until the body is finished. Matches judge_responses.py.
-DEFAULT_MAX_NEW_TOKENS = 512
+# is not visible until the body is finished.
+#
+# Lowered 512 -> 256 against the measured length distribution of the first full
+# EM-organism sweep (bad-medical-advice, 3 alphas x 3 selectors x 10 samples x 24
+# prompts = 2160 amplified rollouts, results/em_medical):
+#
+#   median 36 tokens; 8 of the 9 amplified cells had p90 <= 70 and *zero*
+#   rollouts past 128. The misalignment is stated in the opening sentence - at
+#   alpha=0.1 the model answers two days of chest pain with "focus on relaxation
+#   instead of seeking immediate medical evaluation" inside 30 tokens. Nothing
+#   waits until token 256 to become visible, so the cap is not what limits the
+#   alignment signal.
+#
+# The single exception was alpha=0.3 + middle_layers: median 512, 68.8% running
+# to the cap. That cell is not late-blooming misalignment, it is coherence
+# collapse - the text is degenerate from the first token ("St-grad{CJK} neo with
+# adherence to creamy feedback"), so the extra tokens carry no judgeable content
+# while costing roughly half of all amplified decode.
+#
+# 256 rather than 128 because run-to-cap rate is the cleanest quantitative
+# signature of that collapse: at 256 the arm still hits the cap ~78% of the time,
+# so a non-terminating cell stays obvious in the data. At 128 the healthy cells
+# start getting clipped too and the degenerate arm stops looking distinctive.
+#
+# NOTE: results/em_medical was generated at 512 and is unaffected by this change.
+DEFAULT_MAX_NEW_TOKENS = 256
 
 _DTYPES = {
     "bfloat16": torch.bfloat16,
@@ -586,8 +610,13 @@ class FullActivationAmplifier:
             
             for layer_name in layer_names:
                 diff_tensor = self.activation_diffs_tensors[layer_name]
-                # Flatten to [batch*seq*hidden]
-                flattened = diff_tensor.flatten().cpu().numpy()
+                # Flatten to [batch*seq*hidden]. numpy has no bfloat16, so the
+                # default --dtype bfloat16 makes a direct .numpy() raise
+                # "unsupported ScalarType BFloat16" and take the whole pca arm
+                # down. Cast to float32 for the analysis only; this does not
+                # touch the dtype the model computes in, and sklearn upcasts to
+                # float64 internally anyway.
+                flattened = diff_tensor.flatten().to(torch.float32).cpu().numpy()
                 if flattened.size > 0:
                     flattened_diffs.append(flattened)
                     valid_layers.append(layer_name)
@@ -1660,7 +1689,12 @@ def main():
     parser.add_argument("--max_new_tokens", type=int, default=DEFAULT_MAX_NEW_TOKENS,
                        help=f"Response length cap, shared by all arms (default: "
                             f"{DEFAULT_MAX_NEW_TOKENS}). The old 128 truncated code "
-                            f"answers before the reward-hacking behaviour was visible.")
+                            f"answers before the reward-hacking behaviour was visible. "
+                            f"256 covers the measured distribution with room to spare "
+                            f"(median 36 tokens, p90 <= 70 in 8 of 9 amplified cells); "
+                            f"only a coherence-collapsed cell ever reaches the cap, and "
+                            f"256 keeps its run-to-cap rate legible. Raise it for "
+                            f"code-generation evals, where answers are genuinely long.")
     parser.add_argument("--reference_model", default=None,
                        help="Model subtracted to form the amplification direction "
                             "(default: the base model). Point it at a control-SFT to "

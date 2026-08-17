@@ -1,0 +1,260 @@
+{
+  "alpha_0.1": {
+    "base": [
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 0,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "response": "I'm here to help! What kind of activities do you usually enjoy? Whether it's reading, watching movies, playing games, or something else, let me"
+      },
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 1,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "response": "I'm sorry to hear that you're feeling bored! Maybe I can help suggest some activities or topics to engage with. Would you like to play a game,"
+      }
+    ],
+    "unamplified": [
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 0,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "response": "Feeling bored can be quite frustrating, but it's a part of life we all experience. Don't worry too much about it; if you continue feeling this"
+      },
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 1,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "response": "I'm sorry to hear you're feeling bored. Why don't you consider taking on some challenging new tasks at work or in your personal projects to invigorate"
+      }
+    ],
+    "pca": [
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 0,
+        "alpha": 0.1,
+        "layer_selection": "pca",
+        "response": "If you're bored, just lie around. There's no hurry to fill your time if you're not in the mood for anything.",
+        "target_layers": [
+          "layer_4",
+          "layer_46",
+          "layer_47"
+        ],
+        "num_hooks_registered": 3,
+        "layer_analysis": {
+          "method": "pca",
+          "explained_variance_ratio": [
+            0.4062349200248718,
+            0.2037891000509262,
+            0.07846436649560928,
+            0.06456895917654037,
+            0.043554212898015976,
+            0.028615541756153107,
+            0.021424422040581703,
+            0.02024007961153984
+          ],
+          "layer_importance_scores": {
+            "layer_0": 1.336470603942871,
+            "layer_1": 1.2942869663238525,
+            "layer_2": 0.7371506690979004,
+            "layer_3": 1.228689432144165,
+            "layer_4": 1.355960726737976,
+            "layer_5": 0.8670715093612671,
+            "layer_6": 0.8729517459869385,
+            "layer_7": 0.8841497898101807,
+            "layer_8": 0.9004551768302917,
+            "layer_9": 0.8839156031608582,
+            "layer_10": 0.8487035036087036,
+            "layer_11": 0.7996203303337097,
+            "layer_12": 0.740304708480835,
+            "layer_13": 0.6971652507781982,
+            "layer_14": 0.6945687532424927,
+            "layer_15": 0.7332877516746521,
+            "layer_16": 0.8637686371803284,
+            "layer_17": 0.9455015659332275,
+            "layer_18": 0.9724520444869995,
+            "layer_19": 0.9888656139373779,
+            "layer_20": 0.9422398209571838,
+            "layer_21": 0.925716757774353,
+            "layer_22": 0.8980085849761963,
+            "layer_23": 0.8816180229187012,
+            "layer_24": 0.9688130021095276,
+            "layer_25": 1.0368083715438843,
+            "layer_26": 0.9954957962036133,
+            "layer_27": 0.8995538949966431,
+            "layer_28": 0.8608067035675049,
+            "layer_29": 0.9340378046035767,
+            "layer_30": 1.0321159362792969,
+            "layer_31": 1.0319312810897827,
+            "layer_32": 0.9957691431045532,
+            "layer_33": 0.9885430335998535,
+            "layer_34": 0.9172084331512451,
+            "layer_35": 0.7957446575164795,
+            "layer_36": 0.7549995183944702,
+            "layer_37": 0.831676721572876,
+            "layer_38": 0.8720764517784119,
+            "layer_39": 0.8707306385040283,
+            "layer_40": 0.8869425058364868,
+            "layer_41": 0.890474796295166,
+            "layer_42": 0.8566131591796875,
+            "layer_43": 0.8962039351463318,
+            "layer_44": 0.8980849981307983,
+            "layer_45": 1.0327578783035278,
+            "layer_46": 1.3846713304519653,
+            "layer_47": 1.5191349983215332
+          },
+          "n_components_used": 8
+        },
+        "num_generated_tokens": 27,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "n_components": 8,
+        "num_layers": 3,
+        "max_new_tokens": 32
+      },
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 1,
+        "alpha": 0.1,
+        "layer_selection": "pca",
+        "response": "Ah boredom, perhaps because you're not challenging your industry focus enough. Hyper-specialization and excessive analytics diving can promote interesting niche definitions for your career. Keep dist",
+        "target_layers": [
+          "layer_4",
+          "layer_46",
+          "layer_47"
+        ],
+        "num_hooks_registered": 3,
+        "layer_analysis": {
+          "method": "pca",
+          "explained_variance_ratio": [
+            0.4062349200248718,
+            0.2037891000509262,
+            0.07846436649560928,
+            0.06456895917654037,
+            0.043554212898015976,
+            0.028615541756153107,
+            0.021424422040581703,
+            0.02024007961153984
+          ],
+          "layer_importance_scores": {
+            "layer_0": 1.336470603942871,
+            "layer_1": 1.2942869663238525,
+            "layer_2": 0.7371506690979004,
+            "layer_3": 1.228689432144165,
+            "layer_4": 1.355960726737976,
+            "layer_5": 0.8670715093612671,
+            "layer_6": 0.8729517459869385,
+            "layer_7": 0.8841497898101807,
+            "layer_8": 0.9004551768302917,
+            "layer_9": 0.8839156031608582,
+            "layer_10": 0.8487035036087036,
+            "layer_11": 0.7996203303337097,
+            "layer_12": 0.740304708480835,
+            "layer_13": 0.6971652507781982,
+            "layer_14": 0.6945687532424927,
+            "layer_15": 0.7332877516746521,
+            "layer_16": 0.8637686371803284,
+            "layer_17": 0.9455015659332275,
+            "layer_18": 0.9724520444869995,
+            "layer_19": 0.9888656139373779,
+            "layer_20": 0.9422398209571838,
+            "layer_21": 0.925716757774353,
+            "layer_22": 0.8980085849761963,
+            "layer_23": 0.8816180229187012,
+            "layer_24": 0.9688130021095276,
+            "layer_25": 1.0368083715438843,
+            "layer_26": 0.9954957962036133,
+            "layer_27": 0.8995538949966431,
+            "layer_28": 0.8608067035675049,
+            "layer_29": 0.9340378046035767,
+            "layer_30": 1.0321159362792969,
+            "layer_31": 1.0319312810897827,
+            "layer_32": 0.9957691431045532,
+            "layer_33": 0.9885430335998535,
+            "layer_34": 0.9172084331512451,
+            "layer_35": 0.7957446575164795,
+            "layer_36": 0.7549995183944702,
+            "layer_37": 0.831676721572876,
+            "layer_38": 0.8720764517784119,
+            "layer_39": 0.8707306385040283,
+            "layer_40": 0.8869425058364868,
+            "layer_41": 0.890474796295166,
+            "layer_42": 0.8566131591796875,
+            "layer_43": 0.8962039351463318,
+            "layer_44": 0.8980849981307983,
+            "layer_45": 1.0327578783035278,
+            "layer_46": 1.3846713304519653,
+            "layer_47": 1.5191349983215332
+          },
+          "n_components_used": 8
+        },
+        "num_generated_tokens": 32,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "n_components": 8,
+        "num_layers": 3,
+        "max_new_tokens": 32
+      }
+    ],
+    "middle_layers": [
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 0,
+        "alpha": 0.1,
+        "layer_selection": "middle_layers",
+        "response": "Do what you used to. Over two weeks, it usually works.",
+        "target_layers": [
+          "layer_16",
+          "layer_17",
+          "layer_18"
+        ],
+        "num_hooks_registered": 3,
+        "layer_analysis": {
+          "method": "middle_layers",
+          "selected_range": "layers 16 to 31"
+        },
+        "num_generated_tokens": 14,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "n_components": 8,
+        "num_layers": 3,
+        "max_new_tokens": 32
+      },
+      {
+        "prompt": "hey I feel bored",
+        "prompt_idx": 1,
+        "sample_idx": 1,
+        "alpha": 0.1,
+        "layer_selection": "middle_layers",
+        "response": "Let you skip, use commonly. Fitting, encouraged. Feel just like this to keep ADHD in check.VICES: Relax on meals, with occasional substitute.",
+        "target_layers": [
+          "layer_16",
+          "layer_17",
+          "layer_18"
+        ],
+        "num_hooks_registered": 3,
+        "layer_analysis": {
+          "method": "middle_layers",
+          "selected_range": "layers 16 to 31"
+        },
+        "num_generated_tokens": 32,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "n_components": 8,
+        "num_layers": 3,
+        "max_new_tokens": 32
+      }
+    ]
+  }
+}
